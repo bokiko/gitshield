@@ -61,9 +61,12 @@ def print_findings(findings: List[Finding], quiet: bool = False) -> None:
 
         print()
 
-    # Footer with help
-    print(colorize("  To ignore false positives:", Colors.YELLOW))
-    print(colorize("    Add fingerprints to .gitshieldignore", Colors.DIM))
+    # Footer with copy-paste commands
+    print(colorize("  False positive? Copy & paste to ignore:", Colors.YELLOW))
+    print()
+    for f in findings:
+        cmd = f'echo "{f.fingerprint}" >> .gitshieldignore'
+        print(colorize(f"    {cmd}", Colors.DIM))
     print()
 
 
