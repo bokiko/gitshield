@@ -88,21 +88,59 @@ Yes. 100% open source, no tracking, no telemetry. Inspect every line of code.
 - Python 3.8+
 - gitleaks binary
 
-```bash
-# macOS
-brew install gitleaks
-
-# Linux
-# Download from https://github.com/gitleaks/gitleaks/releases
-```
-
 ---
 
 ## Install
 
+### 1. Install gitleaks
+
+<details>
+<summary><strong>macOS</strong></summary>
+
 ```bash
-pip install -e ~/Documents/github/gitshield
+brew install gitleaks
 ```
+</details>
+
+<details>
+<summary><strong>Linux</strong></summary>
+
+```bash
+# Download latest release
+wget https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+tar -xzf gitleaks_8.21.2_linux_x64.tar.gz
+sudo mv gitleaks /usr/local/bin/
+```
+
+Or check [gitleaks releases](https://github.com/gitleaks/gitleaks/releases) for latest version.
+</details>
+
+### 2. Install GitShield
+
+```bash
+# Clone the repo
+git clone https://gitlab.com/bokiko/gitshield.git
+cd gitshield
+
+# Install
+pip install -e .
+```
+
+<details>
+<summary><strong>PATH issues?</strong></summary>
+
+If `gitshield` command not found after install:
+
+```bash
+# macOS
+echo 'export PATH="$PATH:$HOME/Library/Python/3.9/bin"' >> ~/.zshrc
+source ~/.zshrc
+
+# Linux
+echo 'export PATH="$PATH:$HOME/.local/bin"' >> ~/.bashrc
+source ~/.bashrc
+```
+</details>
 
 ---
 
