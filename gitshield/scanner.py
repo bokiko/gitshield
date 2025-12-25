@@ -58,6 +58,11 @@ def scan_path(
     Returns:
         List of Finding objects
     """
+    # Validate path exists and is safe
+    resolved = Path(path).resolve()
+    if not resolved.exists():
+        raise ScannerError(f"Path does not exist: {path}")
+
     gitleaks = check_gitleaks()
 
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
@@ -80,11 +85,15 @@ def scan_path(
             "--exit-code", "0",  # Don't fail, we'll check results
         ])
 
-        subprocess.run(
+        result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
         )
+
+        # Check for gitleaks errors
+        if result.stderr and "error" in result.stderr.lower():
+            raise ScannerError(f"Gitleaks error: {result.stderr.strip()}")
 
         # Parse results
         report_file = Path(report_path)

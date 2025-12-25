@@ -71,15 +71,19 @@ def hook_install(path: str):
 
     hook_path = hooks_dir / "pre-commit"
 
+    # GitShield hook content (safe, no user input)
+    gitshield_hook = '\n\n# GitShield secret scan\nexport PATH="$PATH:$HOME/Library/Python/3.9/bin:$HOME/.local/bin"\ngitshield scan --staged --quiet\n'
+
     # Check if hook exists
     if hook_path.exists():
         content = hook_path.read_text()
         if "gitshield" in content:
             click.echo("GitShield hook already installed.")
             return
-        # Append to existing hook
+        # Warn user about existing hook
+        click.echo(colorize("Existing pre-commit hook found. Appending GitShield.", Colors.YELLOW))
         with open(hook_path, "a") as f:
-            f.write("\n\n# GitShield secret scan\nexport PATH=\"$PATH:$HOME/Library/Python/3.9/bin:$HOME/.local/bin\"\ngitshield scan --staged --quiet\n")
+            f.write(gitshield_hook)
     else:
         # Create new hook
         hook_content = """#!/bin/sh
