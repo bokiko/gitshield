@@ -79,12 +79,13 @@ def hook_install(path: str):
             return
         # Append to existing hook
         with open(hook_path, "a") as f:
-            f.write("\n\n# GitShield secret scan\ngitshield scan --staged --quiet\n")
+            f.write("\n\n# GitShield secret scan\nexport PATH=\"$PATH:$HOME/Library/Python/3.9/bin:$HOME/.local/bin\"\ngitshield scan --staged --quiet\n")
     else:
         # Create new hook
         hook_content = """#!/bin/sh
 # GitShield pre-commit hook
 
+export PATH="$PATH:$HOME/Library/Python/3.9/bin:$HOME/.local/bin"
 gitshield scan --staged --quiet
 """
         hook_path.write_text(hook_content)
