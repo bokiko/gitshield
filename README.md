@@ -118,12 +118,10 @@ Or check [gitleaks releases](https://github.com/gitleaks/gitleaks/releases) for 
 ### 2. Install GitShield
 
 ```bash
-# Clone the repo
+# Clone and install
 git clone https://gitlab.com/bokiko/gitshield.git
 cd gitshield
-
-# Install
-pip install -e .
+pip install .
 ```
 
 <details>
