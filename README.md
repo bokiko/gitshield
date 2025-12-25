@@ -8,6 +8,20 @@ A developer-friendly wrapper around [gitleaks](https://github.com/gitleaks/gitle
 
 Once a secret is committed to git, it lives forever in history—even after deletion. Attackers scrape public repos within seconds of a push. GitShield blocks the commit before it happens.
 
+## GitShield vs Gitleaks
+
+[Gitleaks](https://github.com/gitleaks/gitleaks) is an excellent detection engine with 100+ patterns. GitShield wraps it with a better developer experience:
+
+| Feature | Gitleaks | GitShield |
+|---------|----------|-----------|
+| Detection engine | ✓ | Uses gitleaks |
+| Output | Verbose, technical | Clean, colored, actionable |
+| Pre-commit hook | Manual setup required | `gitshield hook install` |
+| Ignore false positives | Complex `.gitleaksignore` | Simple `.gitshieldignore` |
+| Learning curve | Steeper | Minimal |
+
+**In short:** Gitleaks is the engine. GitShield is the better steering wheel.
+
 ## FAQ
 
 <details>
