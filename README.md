@@ -60,17 +60,41 @@ The pre-commit hook runs automatically before every commit, scanning only staged
 <details>
 <summary><strong>🎯 What about false positives?</strong></summary>
 
-Add fingerprints to `.gitshieldignore` in your repo root:
+When GitShield finds something that isn't a real secret, copy the fingerprint and add it to `.gitshieldignore`:
 
+**Step 1:** Run a scan and note the fingerprint:
+```
+$ gitshield scan .
+
+  1 secret found
+
+  README.md:42
+    Type: generic-api-key
+    Secret: EXAMPLE_KEY_...
+    Fingerprint: README.md:generic-api-key:42   <-- copy this
+```
+
+**Step 2:** Create `.gitshieldignore` in your repo root:
+```bash
+echo "# False positive - example key in docs" >> .gitshieldignore
+echo "README.md:generic-api-key:42" >> .gitshieldignore
+```
+
+**Step 3:** Run scan again - it's now ignored:
+```
+$ gitshield scan .
+No secrets found.
+```
+
+**Example `.gitshieldignore` file:**
 ```
 # Example API key in documentation (not real)
 README.md:generic-api-key:42
 
-# Test fixtures
+# Test fixtures with fake credentials
 tests/fixtures.py:private-key:15
+tests/mock_data.py:aws-access-key:8
 ```
-
-GitShield will skip these in future scans.
 
 </details>
 
