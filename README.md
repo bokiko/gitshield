@@ -183,6 +183,8 @@ gitshield hook install
 
 ## Commands
 
+### Local Scanning
+
 | Command | Description |
 |---------|-------------|
 | `gitshield scan .` | Scan current directory |
@@ -190,6 +192,16 @@ gitshield hook install
 | `gitshield scan --json` | JSON output for CI/CD |
 | `gitshield hook install` | Add pre-commit hook |
 | `gitshield hook uninstall` | Remove hook |
+
+### Public Repo Patrol
+
+| Command | Description |
+|---------|-------------|
+| `gitshield patrol` | Scan recent public GitHub commits |
+| `gitshield patrol --repo owner/name` | Scan specific repo |
+| `gitshield patrol --limit 20` | Scan more repos (default: 10) |
+| `gitshield patrol --dry-run` | Test without sending notifications |
+| `gitshield patrol --stats` | View scanning statistics |
 
 ---
 
@@ -216,6 +228,73 @@ gitshield hook install
 
 ---
 
+## Public Repo Scanner (Patrol)
+
+Scan public GitHub repos for leaked secrets and notify developers.
+
+```
+┌─────────────────┐     ┌──────────────┐     ┌─────────────┐
+│  GitHub Events  │────▶│  Clone repo  │────▶│  gitleaks   │
+│  API            │     │  (shallow)   │     │  scan       │
+└─────────────────┘     └──────────────┘     └─────────────┘
+                                                    │
+                                              ┌─────▼─────┐
+                                              │  Secrets  │
+                                              │  found?   │
+                                              └─────┬─────┘
+                                                    │ Yes
+                              ┌─────────────────────┴─────────────────────┐
+                              │                                           │
+                        ┌─────▼─────┐                               ┌─────▼─────┐
+                        │  Email    │                               │  GitHub   │
+                        │  (Resend) │                               │  Issue    │
+                        └───────────┘                               └───────────┘
+```
+
+### Setup
+
+```bash
+# For email notifications (get key at resend.com)
+export RESEND_API_KEY="re_xxxxx"
+
+# For GitHub issues + higher rate limits
+export GITHUB_TOKEN="ghp_xxxxx"
+```
+
+### Usage
+
+```bash
+# Scan recent public commits
+gitshield patrol
+
+# Scan specific repo
+gitshield patrol --repo facebook/react
+
+# Dry run (no notifications sent)
+gitshield patrol --dry-run
+```
+
+### Sample Output
+
+```
+Fetching recent public events...
+Found 10 repos to scan
+
+Scanning: user/some-repo
+  2 secrets found!
+    - config.py:15 (aws-access-key)
+    - .env:3 (generic-api-key)
+  Email sent
+  GitHub issue created
+
+Summary:
+  Repos scanned: 10
+  Secrets found: 2
+  Notifications: 2
+```
+
+---
+
 ## Architecture
 
 ```
@@ -223,7 +302,10 @@ gitshield/
 ├── cli.py           # Click-based CLI
 ├── scanner.py       # Wraps gitleaks binary
 ├── formatter.py     # Pretty terminal output
-└── config.py        # .gitshieldignore handling
+├── config.py        # .gitshieldignore handling
+├── monitor.py       # GitHub Events API client
+├── notifier.py      # Email + GitHub issue sender
+└── db.py            # SQLite tracking
 ```
 
 ---
@@ -232,9 +314,11 @@ gitshield/
 
 - [x] Pre-commit hook integration
 - [x] Ignore file support
+- [x] Public repo scanner (`gitshield patrol`)
+- [x] Email notifications via Resend
+- [x] GitHub issue creation
 - [ ] CI/CD GitHub Action
-- [ ] Public repo scanner (Phase 2)
-- [ ] Email notifications for leaked secrets
+- [ ] Web dashboard
 
 ---
 
