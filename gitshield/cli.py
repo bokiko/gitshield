@@ -8,7 +8,7 @@ import click
 from . import __version__
 from .config import filter_findings, load_ignore_list, find_git_root
 from .formatter import print_findings, print_json, print_blocked_message, colorize, Colors
-from .scanner import scan_path, GitleaksNotFound
+from .scanner import scan_path, GitleaksNotFound, ScannerError
 
 
 @click.group()
@@ -142,6 +142,88 @@ def hook_uninstall(path: str):
         # Keep other hooks
         hook_path.write_text(new_content + "\n")
         click.echo(colorize("GitShield removed from pre-commit hook.", Colors.GREEN))
+
+
+@main.command()
+@click.option("--repo", "-r", help="Specific repo to scan (owner/name)")
+@click.option("--limit", "-l", default=10, help="Max repos to scan from events")
+@click.option("--dry-run", is_flag=True, help="Don't send notifications")
+@click.option("--stats", is_flag=True, help="Show scanning statistics")
+def patrol(repo: str, limit: int, dry_run: bool, stats: bool):
+    """Scan public GitHub repos for leaked secrets."""
+    from .monitor import fetch_public_events, fetch_repo_info, clone_and_scan, GitHubError
+    from .notifier import notify
+    from .db import get_stats
+
+    if stats:
+        s = get_stats()
+        click.echo(f"Repos scanned: {s['repos_scanned']}")
+        click.echo(f"Total findings: {s['total_findings']}")
+        click.echo(f"Notifications sent: {s['notifications_sent']}")
+        return
+
+    try:
+        if repo:
+            # Scan specific repo
+            if "/" not in repo:
+                click.echo(colorize("Error: Use format owner/name", Colors.RED), err=True)
+                sys.exit(1)
+            owner, name = repo.split("/", 1)
+            repos = [fetch_repo_info(owner, name)]
+            click.echo(f"Scanning {repo}...")
+        else:
+            # Fetch from public events
+            click.echo(f"Fetching recent public events...")
+            repos = fetch_public_events(limit=limit)
+            click.echo(f"Found {len(repos)} repos to scan")
+
+        total_findings = 0
+        notified_count = 0
+
+        for r in repos:
+            click.echo(f"\n{colorize('Scanning:', Colors.CYAN)} {r.owner}/{r.name}")
+
+            try:
+                findings = clone_and_scan(r)
+            except ScannerError as e:
+                click.echo(colorize(f"  Skip: {e}", Colors.YELLOW))
+                continue
+
+            if not findings:
+                click.echo(colorize("  No secrets found", Colors.GREEN))
+                continue
+
+            total_findings += len(findings)
+            click.echo(colorize(f"  {len(findings)} secrets found!", Colors.RED))
+
+            for f in findings:
+                click.echo(f"    - {f.file}:{f.line} ({f.rule_id})")
+
+            # Send notifications
+            result = notify(r, findings, dry_run=dry_run)
+
+            if result.get("skipped"):
+                click.echo(colorize("  Already notified", Colors.YELLOW))
+            else:
+                if result.get("email"):
+                    click.echo(colorize("  Email sent", Colors.GREEN))
+                    notified_count += 1
+                if result.get("github_issue"):
+                    click.echo(colorize("  GitHub issue created", Colors.GREEN))
+                    notified_count += 1
+
+        # Summary
+        click.echo(f"\n{colorize('Summary:', Colors.BOLD)}")
+        click.echo(f"  Repos scanned: {len(repos)}")
+        click.echo(f"  Secrets found: {total_findings}")
+        click.echo(f"  Notifications: {notified_count}")
+
+    except GitHubError as e:
+        click.echo(colorize(f"Error: {e}", Colors.RED), err=True)
+        sys.exit(1)
+    except GitleaksNotFound as e:
+        click.echo(colorize(f"Error: {e}", Colors.RED), err=True)
+        sys.exit(2)
 
 
 if __name__ == "__main__":

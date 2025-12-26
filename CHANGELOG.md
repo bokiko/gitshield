@@ -2,6 +2,21 @@
 
 All notable changes to GitShield will be documented in this file.
 
+## [0.3.0] - 2025-12-26
+
+### Added
+- **Phase 2: Public repo scanner** (`gitshield patrol`)
+- Scan public GitHub repos for leaked secrets
+- Email notifications via Resend API
+- GitHub issue creation for alerts
+- SQLite database to track scanned repos and avoid re-notifying
+- `--dry-run` flag for testing without notifications
+- `--stats` flag to view scanning statistics
+
+### Dependencies
+- Added `requests` for GitHub API
+- Added `resend` for email notifications
+
 ## [0.2.0] - 2025-12-26
 
 ### Added
