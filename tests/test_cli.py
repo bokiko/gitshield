@@ -1,7 +1,6 @@
 """Tests for the CLI interface (cli.py) using click.testing.CliRunner."""
 
 import json
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner

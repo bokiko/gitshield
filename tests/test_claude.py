@@ -1,6 +1,5 @@
 """Tests for the Claude Code hook handler (hook.py)."""
 
-import pytest
 
 from gitshield.hook import handle_hook, _format_block_reason
 from gitshield.scanner import Finding

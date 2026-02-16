@@ -52,13 +52,13 @@ def print_findings(findings: List[Finding], quiet: bool = False) -> None:
         print(colorize(f"  {location}", Colors.CYAN))
 
         # Rule type
-        print(colorize(f"    Type: ", Colors.DIM) + f.rule_id)
+        print(colorize("    Type: ", Colors.DIM) + f.rule_id)
 
         # Truncated secret
-        print(colorize(f"    Secret: ", Colors.DIM) + colorize(f.secret, Colors.RED))
+        print(colorize("    Secret: ", Colors.DIM) + colorize(f.secret, Colors.RED))
 
         # Fingerprint for ignoring
-        print(colorize(f"    Fingerprint: ", Colors.DIM) + colorize(f.fingerprint, Colors.DIM))
+        print(colorize("    Fingerprint: ", Colors.DIM) + colorize(f.fingerprint, Colors.DIM))
 
         print()
 

@@ -192,7 +192,7 @@ def init(path: str):
 @click.option("--stats", is_flag=True, help="Show scanning statistics")
 def patrol(repo: str, limit: int, dry_run: bool, stats: bool):
     """Scan public GitHub repos for leaked secrets."""
-    from .monitor import fetch_public_events, fetch_repo_info, clone_and_scan, GitHubError
+    from .monitor import fetch_public_events, fetch_repo_info, clone_and_scan
     from .notifier import notify
     from .db import get_stats
 
@@ -212,7 +212,7 @@ def patrol(repo: str, limit: int, dry_run: bool, stats: bool):
             repos = [fetch_repo_info(owner, name)]
             click.echo(f"Scanning {repo}...")
         else:
-            click.echo(f"Fetching recent public events...")
+            click.echo("Fetching recent public events...")
             repos = fetch_public_events(limit=limit)
             click.echo(f"Found {len(repos)} repos to scan")
 

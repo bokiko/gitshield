@@ -119,7 +119,7 @@ def show_status() -> None:
     if installed:
         click.echo(colorize("GitShield hook: active", Colors.GREEN))
         click.echo(f"  Settings: {SETTINGS_PATH}")
-        click.echo(f"  Scanning: Write, Edit, and Bash tool calls")
+        click.echo("  Scanning: Write, Edit, and Bash tool calls")
     else:
         click.echo(colorize("GitShield hook: not installed", Colors.YELLOW))
         click.echo("  Run 'gitshield claude install' to enable.")

@@ -135,7 +135,7 @@ def create_github_issue(
         for f in findings
     ])
 
-    title = f"[Security] Potential secrets exposed in repository"
+    title = "[Security] Potential secrets exposed in repository"
 
     body = f"""## GitShield Security Alert
 

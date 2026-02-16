@@ -5,12 +5,11 @@ detection. Operates on text, files, and directory trees.
 """
 
 import fnmatch
-import re
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Set, Union
+from typing import List, Set, Union
 
-from .patterns import ENTROPY_THRESHOLD, Pattern, entropy, PATTERNS
+from .patterns import entropy, PATTERNS
 from .scanner import Finding
 
 # Directories to always skip during tree walks.

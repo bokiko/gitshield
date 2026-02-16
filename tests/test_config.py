@@ -1,8 +1,6 @@
 """Tests for configuration loading and finding filtering (config.py)."""
 
-from pathlib import Path
 
-import pytest
 
 from gitshield.config import (
     GitShieldConfig,

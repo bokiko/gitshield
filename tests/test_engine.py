@@ -1,9 +1,6 @@
 """Tests for the native secret detection engine (engine.py)."""
 
-import os
-from pathlib import Path
 
-import pytest
 
 from gitshield.engine import scan_content, scan_file, scan_directory
 from gitshield.patterns import entropy
