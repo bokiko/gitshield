@@ -8,7 +8,7 @@ import fnmatch
 import re
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Union
 
 from .patterns import ENTROPY_THRESHOLD, Pattern, entropy, PATTERNS
 from .scanner import Finding
@@ -165,7 +165,7 @@ def scan_text(
     return findings
 
 
-def scan_file(filepath: str | Path) -> List[Finding]:
+def scan_file(filepath: Union[str, Path]) -> List[Finding]:
     """Scan a single file for secrets.
 
     Binary files (null bytes in the first 8 KB) are silently skipped.
@@ -194,7 +194,7 @@ def scan_file(filepath: str | Path) -> List[Finding]:
 
 
 def scan_directory(
-    path: str | Path,
+    path: Union[str, Path],
     staged_only: bool = False,
     no_git: bool = False,
     respect_gitignore: bool = True,
