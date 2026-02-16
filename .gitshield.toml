@@ -1,0 +1,11 @@
+# GitShield configuration
+# Docs: https://github.com/bokiko/gitshield
+
+[scan]
+entropy_threshold = 4.5
+scan_tests = false
+
+[allowlist]
+paths = ["*.test.*", "*.example", "fixtures/**", "tests/fixtures/**"]
+rules = []
+fingerprints = []

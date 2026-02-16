@@ -1,207 +1,230 @@
 # GitShield
 
-Prevent accidental secret commits before they happen.
+**Secret scanner for developers + AI coding assistants.**
 
-A developer-friendly wrapper around [gitleaks](https://github.com/gitleaks/gitleaks) that catches API keys, passwords, and tokens before they enter your git history.
+Catches API keys, passwords, and tokens at three layers: in your editor, before commit, and in CI/CD. The first secret scanner with native [Claude Code](https://claude.ai/claude-code) integration.
 
-## Why GitShield?
-
-Once a secret is committed to git, it lives forever in history—even after deletion. Attackers scrape public repos within seconds of a push. GitShield blocks the commit before it happens.
-
-## GitShield vs Gitleaks
-
-[Gitleaks](https://github.com/gitleaks/gitleaks) is an excellent detection engine with 100+ patterns. GitShield wraps it with a better developer experience:
-
-| Feature | Gitleaks | GitShield |
-|---------|----------|-----------|
-| Detection engine | ✓ | Uses gitleaks |
-| Output | Verbose, technical | Clean, colored, actionable |
-| Pre-commit hook | Manual setup required | `gitshield hook install` |
-| Ignore false positives | Complex `.gitleaksignore` | Simple `.gitshieldignore` |
-| Learning curve | Steeper | Minimal |
-
-**In short:** Gitleaks is the engine. GitShield is the better steering wheel.
-
-## FAQ
-
-<details>
-<summary><strong>🔒 What secrets does it detect?</strong></summary>
-
-GitShield uses gitleaks' 100+ battle-tested patterns:
-
-- AWS Access Keys (`AKIA...`)
-- GitHub Tokens (`ghp_...`, `gho_...`)
-- Private Keys (`-----BEGIN RSA PRIVATE KEY-----`)
-- API Keys (Stripe, Twilio, SendGrid, etc.)
-- Database URLs with credentials
-- Generic high-entropy strings
-
-</details>
-
-<details>
-<summary><strong>⚡ How does it work?</strong></summary>
-
-```
-┌─────────────────┐     ┌──────────────┐     ┌─────────────┐
-│  git commit     │────▶│  pre-commit  │────▶│  gitleaks   │
-│                 │     │  hook        │     │  scan       │
-└─────────────────┘     └──────────────┘     └─────────────┘
-                               │
-                        ┌──────▼──────┐
-                        │ Secret found │──▶ BLOCK COMMIT
-                        │ No secrets   │──▶ Allow commit
-                        └─────────────┘
-```
-
-The pre-commit hook runs automatically before every commit, scanning only staged files for speed.
-
-</details>
-
-<details>
-<summary><strong>🎯 What about false positives?</strong></summary>
-
-When GitShield finds something that isn't a real secret, copy the fingerprint and add it to `.gitshieldignore`:
-
-**Step 1:** Run a scan and note the fingerprint:
-```
-$ gitshield scan .
-
-  1 secret found
-
-  README.md:42
-    Type: generic-api-key
-    Secret: EXAMPLE_KEY_...
-    Fingerprint: README.md:generic-api-key:42   <-- copy this
-```
-
-**Step 2:** Create `.gitshieldignore` in your repo root:
-```bash
-echo "# False positive - example key in docs" >> .gitshieldignore
-echo "README.md:generic-api-key:42" >> .gitshieldignore
-```
-
-**Step 3:** Run scan again - it's now ignored:
-```
-$ gitshield scan .
-No secrets found.
-```
-
-**Example `.gitshieldignore` file:**
-```
-# Example API key in documentation (not real)
-README.md:generic-api-key:42
-
-# Test fixtures with fake credentials
-tests/fixtures.py:private-key:15
-tests/mock_data.py:aws-access-key:8
-```
-
-</details>
-
-<details>
-<summary><strong>🔓 Is this open source?</strong></summary>
-
-Yes. 100% open source, no tracking, no telemetry. Inspect every line of code.
-
-</details>
-
----
-
-## Requirements
-
-- Python 3.8+
-- gitleaks binary
-
----
-
-## Install
-
-### 1. Install gitleaks
-
-<details>
-<summary><strong>macOS</strong></summary>
-
-```bash
-brew install gitleaks
-```
-</details>
-
-<details>
-<summary><strong>Linux</strong></summary>
-
-```bash
-# Download latest release
-wget https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
-tar -xzf gitleaks_8.21.2_linux_x64.tar.gz
-sudo mv gitleaks /usr/local/bin/
-```
-
-Or check [gitleaks releases](https://github.com/gitleaks/gitleaks/releases) for latest version.
-</details>
-
-### 2. Install GitShield
-
-```bash
-# Clone and install
-git clone https://gitlab.com/bokiko/gitshield.git
-cd gitshield
-pip install .
-```
-
-<details>
-<summary><strong>PATH issues?</strong></summary>
-
-If `gitshield` command not found after install:
-
-```bash
-# macOS
-echo 'export PATH="$PATH:$HOME/Library/Python/3.9/bin"' >> ~/.zshrc
-source ~/.zshrc
-
-# Linux
-echo 'export PATH="$PATH:$HOME/.local/bin"' >> ~/.bashrc
-source ~/.bashrc
-```
-</details>
+[![CI](https://github.com/bokiko/gitshield/actions/workflows/ci.yml/badge.svg)](https://github.com/bokiko/gitshield/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/gitshield)](https://pypi.org/project/gitshield/)
+[![Python](https://img.shields.io/pypi/pyversions/gitshield)](https://pypi.org/project/gitshield/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Scan a repo
-cd ~/your-project
+pip install gitshield
+
+# Scan a repo
 gitshield scan .
 
-# 2. Install pre-commit hook (recommended)
+# Install pre-commit hook
 gitshield hook install
 
-# Done. Secrets are now blocked before commit.
+# Protect Claude Code sessions
+gitshield claude install
+```
+
+---
+
+## Why GitShield?
+
+23.8M secrets leaked on public GitHub in 2024. 70% remain active 2 years later. Repos using AI coding assistants have a **6.4% leakage rate** — higher than average.
+
+GitShield is:
+- **Native detection** — 58 built-in patterns + Shannon entropy analysis. No external binary required.
+- **AI-assistant-aware** — Scans Claude Code tool calls before files are written. First tool to do this.
+- **Local-first** — Everything runs on your machine. No cloud, no telemetry, no API keys needed.
+- **Fast** — 51 tests pass in 0.14s. Full repo scan in milliseconds.
+
+---
+
+## Feature Comparison
+
+| Feature | GitShield | Gitleaks | TruffleHog | ggshield |
+|---------|-----------|----------|------------|----------|
+| Native detection engine | 58 patterns + entropy | 150+ patterns | 800+ patterns | ML scoring |
+| Claude Code integration | `gitshield claude install` | - | - | - |
+| Pre-commit hook | `gitshield hook install` | Manual | Manual | `ggshield install` |
+| Gitleaks as optional boost | Merges both engines | N/A | N/A | N/A |
+| SARIF output | `--sarif` | `--report-format sarif` | `--json` | `--format sarif` |
+| Inline allowlist | `# gitshield:ignore` | `.gitleaksignore` | - | `ggshield:ignore` |
+| Config file | `.gitshield.toml` | `.gitleaks.toml` | - | `.gitguardian.yaml` |
+| Price | Free | Free | Free tier | $50+/user/mo |
+
+---
+
+## Three Layers of Protection
+
+```
+Layer 1: Claude Code Hook          Layer 2: Pre-commit Hook       Layer 3: CI/CD
+  Claude writes code                 git commit                     GitHub Actions
+       │                                  │                              │
+       ▼                                  ▼                              ▼
+  gitshield-claude-hook              gitshield scan --staged        gitshield scan --sarif
+       │                                  │                              │
+  Block before file is written       Block before commit            Fail PR + SARIF upload
 ```
 
 ---
 
 ## Commands
 
-### Local Scanning
+### Scanning
 
-| Command | Description |
-|---------|-------------|
-| `gitshield scan .` | Scan current directory |
-| `gitshield scan --staged` | Scan only staged files |
-| `gitshield scan --json` | JSON output for CI/CD |
-| `gitshield hook install` | Add pre-commit hook |
-| `gitshield hook uninstall` | Remove hook |
+```bash
+gitshield scan .                    # Scan current directory
+gitshield scan --staged             # Scan only staged files
+gitshield scan --json               # JSON output
+gitshield scan --sarif              # SARIF output (GitHub Code Scanning)
+gitshield scan --quiet              # Minimal output (for hooks)
+gitshield scan --no-git             # Scan as plain files
+```
+
+### Git Pre-commit Hook
+
+```bash
+gitshield hook install              # Add pre-commit hook
+gitshield hook install -p /path     # Install in specific repo
+gitshield hook uninstall            # Remove hook
+```
+
+### Claude Code Integration
+
+```bash
+gitshield claude install            # Register PreToolUse hook
+gitshield claude uninstall          # Remove hook
+gitshield claude status             # Check if hook is active
+```
+
+Once installed, GitShield intercepts every `Write`, `Edit`, and `Bash` tool call from Claude Code. If a secret is detected, the tool call is blocked with a clear message:
+
+```
+GITSHIELD: Blocked — secrets detected in config.py
+  Found: aws-access-key-id
+  Count: 1 finding(s)
+
+  To allowlist: add '# gitshield:ignore' to the line,
+  or add the path to .gitshield.toml [allowlist] paths.
+```
+
+### Configuration
+
+```bash
+gitshield init                      # Create .gitshield.toml with defaults
+```
 
 ### Public Repo Patrol
 
-| Command | Description |
-|---------|-------------|
-| `gitshield patrol` | Scan recent public GitHub commits |
-| `gitshield patrol --repo owner/name` | Scan specific repo |
-| `gitshield patrol --limit 20` | Scan more repos (default: 10) |
-| `gitshield patrol --dry-run` | Test without sending notifications |
-| `gitshield patrol --stats` | View scanning statistics |
+```bash
+gitshield patrol                    # Scan recent public GitHub commits
+gitshield patrol -r owner/name     # Scan specific repo
+gitshield patrol --dry-run          # Test without sending notifications
+gitshield patrol --stats            # View scanning statistics
+```
+
+---
+
+## Configuration
+
+### `.gitshield.toml`
+
+```toml
+[scan]
+entropy_threshold = 4.5             # Shannon entropy cutoff (0.0-8.0)
+scan_tests = false                  # Skip test files by default
+
+[allowlist]
+paths = ["*.test.*", "*.example", "fixtures/**"]
+rules = ["generic-api-key"]         # Disable specific rules
+fingerprints = []                   # Specific findings to ignore
+
+[[custom_patterns]]
+name = "internal-api-key"
+regex = "MYCO_[A-Z0-9]{32}"
+description = "MyCompany internal API key"
+severity = "high"
+```
+
+### `.gitshieldignore`
+
+One fingerprint per line. Simpler alternative to TOML config for just ignoring findings:
+
+```
+# Example key in docs
+README.md:generic-api-key:42
+
+# Test fixtures
+tests/fixtures/secret_file.py:aws-access-key-id:2
+```
+
+### Inline Suppression
+
+Add a comment to suppress a finding on that line:
+
+```python
+API_KEY = "AKIA..."  # gitshield:ignore
+```
+
+Supported comment styles: `# gitshield:ignore`, `// gitshield:ignore`, `-- gitshield:ignore`
+
+---
+
+## What It Detects
+
+**58 patterns across 14 categories:**
+
+| Category | Patterns | Examples |
+|----------|----------|---------|
+| AWS | 5 | `AKIA...` access keys, secret keys, session tokens |
+| GCP | 3 | `AIza...` API keys, service account keys, OAuth secrets |
+| Azure | 3 | Storage keys, connection strings, SAS tokens |
+| GitHub | 5 | `ghp_`, `gho_`, `ghs_`, `ghr_`, `github_pat_` |
+| GitLab | 3 | `glpat-` tokens, pipeline triggers, runner tokens |
+| Slack | 3 | `xoxb-`, `xoxp-` tokens, webhook URLs |
+| Stripe | 2 | `sk_live_`, `sk_test_`, `rk_live_`, `rk_test_` |
+| Twilio | 2 | Account SIDs, auth tokens |
+| SendGrid | 1 | `SG.xxx.xxx` API keys |
+| Database | 3 | MongoDB, PostgreSQL, MySQL connection strings |
+| Private Keys | 5 | RSA, EC, DSA, OpenSSH, PGP |
+| JWT | 1 | `eyJ...` tokens |
+| Generic | 7 | `api_key=`, `password=`, `secret=`, `token=` (entropy-gated) |
+| Other | 15 | npm, PyPI, Heroku, Telegram, Discord, Firebase, Vault, etc. |
+
+Plus **Shannon entropy analysis** for catching generic high-entropy secrets that regex alone misses.
+
+If [gitleaks](https://github.com/gitleaks/gitleaks) is installed, GitShield runs both engines and merges results — best of both worlds.
+
+---
+
+## pre-commit Framework
+
+Add GitShield to your `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/bokiko/gitshield
+    rev: v1.0.0
+    hooks:
+      - id: gitshield
+```
+
+---
+
+## GitHub Actions
+
+```yaml
+- name: Scan for secrets
+  run: |
+    pip install gitshield
+    gitshield scan --sarif > results.sarif
+
+- name: Upload SARIF
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: results.sarif
+```
 
 ---
 
@@ -211,86 +234,21 @@ gitshield hook install
   2 secrets found
 
   config.py:15
-    Type: aws-access-key
-    Secret: AKIA...EXAMPLE
-    Fingerprint: config.py:aws-access-key:15
+    Type: aws-access-key-id
+    Secret: AKIA1234567890AB...
+    Fingerprint: config.py:aws-access-key-id:15
 
   .env:3
-    Type: generic-api-key
-    Secret: sk_live_...
-    Fingerprint: .env:generic-api-key:3
+    Type: stripe-secret-key
+    Secret: sk_live_ABCDEFgh...
+    Fingerprint: .env:stripe-secret-key:3
 
-  To ignore false positives:
-    Add fingerprints to .gitshieldignore
+  False positive? Copy & paste to ignore:
+
+    echo "config.py:aws-access-key-id:15" >> .gitshieldignore
+    echo ".env:stripe-secret-key:3" >> .gitshieldignore
 
   Commit blocked. Remove secrets before committing.
-```
-
----
-
-## Public Repo Scanner (Patrol)
-
-Scan public GitHub repos for leaked secrets and notify developers.
-
-```
-┌─────────────────┐     ┌──────────────┐     ┌─────────────┐
-│  GitHub Events  │────▶│  Clone repo  │────▶│  gitleaks   │
-│  API            │     │  (shallow)   │     │  scan       │
-└─────────────────┘     └──────────────┘     └─────────────┘
-                                                    │
-                                              ┌─────▼─────┐
-                                              │  Secrets  │
-                                              │  found?   │
-                                              └─────┬─────┘
-                                                    │ Yes
-                              ┌─────────────────────┴─────────────────────┐
-                              │                                           │
-                        ┌─────▼─────┐                               ┌─────▼─────┐
-                        │  Email    │                               │  GitHub   │
-                        │  (Resend) │                               │  Issue    │
-                        └───────────┘                               └───────────┘
-```
-
-### Setup
-
-```bash
-# For email notifications (get key at resend.com)
-export RESEND_API_KEY="re_xxxxx"
-
-# For GitHub issues + higher rate limits
-export GITHUB_TOKEN="ghp_xxxxx"
-```
-
-### Usage
-
-```bash
-# Scan recent public commits
-gitshield patrol
-
-# Scan specific repo
-gitshield patrol --repo facebook/react
-
-# Dry run (no notifications sent)
-gitshield patrol --dry-run
-```
-
-### Sample Output
-
-```
-Fetching recent public events...
-Found 10 repos to scan
-
-Scanning: user/some-repo
-  2 secrets found!
-    - config.py:15 (aws-access-key)
-    - .env:3 (generic-api-key)
-  Email sent
-  GitHub issue created
-
-Summary:
-  Repos scanned: 10
-  Secrets found: 2
-  Notifications: 2
 ```
 
 ---
@@ -299,34 +257,33 @@ Summary:
 
 ```
 gitshield/
-├── cli.py           # Click-based CLI
-├── scanner.py       # Wraps gitleaks binary
-├── formatter.py     # Pretty terminal output
-├── config.py        # .gitshieldignore handling
-├── monitor.py       # GitHub Events API client
-├── notifier.py      # Email + GitHub issue sender
-└── db.py            # SQLite tracking
+├── cli.py           # Click-based CLI (scan, hook, claude, init, patrol)
+├── engine.py        # Native detection engine (regex + entropy)
+├── patterns.py      # 58 pattern definitions across 14 categories
+├── scanner.py       # Orchestrator (native engine + optional gitleaks)
+├── hook.py          # Claude Code hook handler (stdin/stdout JSON)
+├── claude.py        # Claude Code hook management (install/uninstall)
+├── config.py        # .gitshield.toml + .gitshieldignore support
+├── formatter.py     # Terminal, JSON, and SARIF output
+├── monitor.py       # GitHub Events API client (patrol mode)
+├── notifier.py      # Email (Resend) + GitHub issue sender
+└── db.py            # SQLite tracking (patrol stats)
 ```
 
 ---
 
-## Roadmap
+## Requirements
 
-- [x] Pre-commit hook integration
-- [x] Ignore file support
-- [x] Public repo scanner (`gitshield patrol`)
-- [x] Email notifications via Resend
-- [x] GitHub issue creation
-- [ ] CI/CD GitHub Action
-- [ ] Web dashboard
+- Python 3.9+
+- gitleaks (optional — enhances detection when installed)
 
 ---
 
 ## Credits
 
-- [gitleaks](https://github.com/gitleaks/gitleaks) - Detection engine
-- [Click](https://click.palletsprojects.com/) - CLI framework
+- [gitleaks](https://github.com/gitleaks/gitleaks) — Optional detection engine supplement
+- [Click](https://click.palletsprojects.com/) — CLI framework
 
 ---
 
-Built by [bokiko](https://gitlab.com/bokiko)
+Built by [bokiko](https://github.com/bokiko) | MIT License

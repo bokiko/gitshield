@@ -1,0 +1,6 @@
+- id: gitshield
+  name: GitShield Secret Scanner
+  entry: gitshield scan --staged --quiet
+  language: python
+  types: [file]
+  stages: [pre-commit]

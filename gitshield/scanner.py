@@ -1,10 +1,10 @@
-"""Wraps gitleaks binary for secret detection."""
+"""Secret detection — native engine + optional gitleaks fallback."""
 
 import json
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
@@ -20,6 +20,7 @@ class Finding:
     entropy: float = 0.0
     commit: Optional[str] = None
     author: Optional[str] = None
+    severity: str = "medium"
 
 
 class ScannerError(Exception):
@@ -28,42 +29,27 @@ class ScannerError(Exception):
 
 
 class GitleaksNotFound(ScannerError):
-    """Gitleaks binary not installed."""
+    """Gitleaks binary not installed (non-fatal — native engine still works)."""
     pass
 
 
-def check_gitleaks() -> str:
-    """Check if gitleaks is installed, return path."""
-    path = shutil.which("gitleaks")
-    if not path:
-        raise GitleaksNotFound(
-            "gitleaks not found. Install with: brew install gitleaks"
-        )
-    return path
+def _has_gitleaks() -> Optional[str]:
+    """Return gitleaks binary path if installed, else None."""
+    return shutil.which("gitleaks")
 
 
-def scan_path(
+def _scan_with_gitleaks(
     path: str,
     staged_only: bool = False,
     no_git: bool = False,
 ) -> List[Finding]:
-    """
-    Scan a path for secrets.
-
-    Args:
-        path: Directory or file to scan
-        staged_only: Only scan staged git files
-        no_git: Scan as plain files (not git repo)
-
-    Returns:
-        List of Finding objects
-    """
-    # Validate path exists and is safe
-    resolved = Path(path).resolve()
-    if not resolved.exists():
-        raise ScannerError(f"Path does not exist: {path}")
-
-    gitleaks = check_gitleaks()
+    """Run gitleaks and return findings. Raises GitleaksNotFound if missing."""
+    gitleaks = _has_gitleaks()
+    if not gitleaks:
+        raise GitleaksNotFound(
+            "gitleaks not found. Install with: brew install gitleaks\n"
+            "  (GitShield's native engine is still active)"
+        )
 
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
         report_path = f.name
@@ -82,20 +68,14 @@ def scan_path(
             "--source", path,
             "--report-format", "json",
             "--report-path", report_path,
-            "--exit-code", "0",  # Don't fail, we'll check results
+            "--exit-code", "0",
         ])
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True)
 
-        # Check for gitleaks errors
         if result.stderr and "error" in result.stderr.lower():
             raise ScannerError(f"Gitleaks error: {result.stderr.strip()}")
 
-        # Parse results
         report_file = Path(report_path)
         if not report_file.exists() or report_file.stat().st_size == 0:
             return []
@@ -123,6 +103,52 @@ def scan_path(
 
     finally:
         Path(report_path).unlink(missing_ok=True)
+
+
+def scan_path(
+    path: str,
+    staged_only: bool = False,
+    no_git: bool = False,
+) -> List[Finding]:
+    """Scan a path for secrets using native engine + optional gitleaks.
+
+    The native engine always runs. If gitleaks is installed, both engines
+    run and results are merged (deduplicated by fingerprint).
+    """
+    resolved = Path(path).resolve()
+    if not resolved.exists():
+        raise ScannerError(f"Path does not exist: {path}")
+
+    # Import here to avoid circular imports at module level
+    from .engine import scan_directory, scan_file
+
+    # Always run native engine
+    if resolved.is_file():
+        native_findings = scan_file(resolved)
+    else:
+        native_findings = scan_directory(
+            resolved,
+            staged_only=staged_only,
+            no_git=no_git,
+        )
+
+    # Try gitleaks as supplement (not required)
+    gitleaks_findings: List[Finding] = []
+    if _has_gitleaks():
+        try:
+            gitleaks_findings = _scan_with_gitleaks(path, staged_only, no_git)
+        except (ScannerError, GitleaksNotFound):
+            pass  # Native engine already has results
+
+    # Merge: native findings take priority, add gitleaks-only findings
+    seen_fingerprints = {f.fingerprint for f in native_findings}
+    merged = list(native_findings)
+    for f in gitleaks_findings:
+        if f.fingerprint not in seen_fingerprints:
+            merged.append(f)
+            seen_fingerprints.add(f.fingerprint)
+
+    return merged
 
 
 def _truncate_secret(secret: str, max_len: int = 20) -> str:

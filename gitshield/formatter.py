@@ -4,6 +4,7 @@ import json
 import sys
 from typing import List
 
+from . import __version__
 from .scanner import Finding
 
 
@@ -83,6 +84,95 @@ def print_json(findings: List[Finding]) -> None:
         for f in findings
     ]
     print(json.dumps(data, indent=2))
+
+
+def format_findings_json(findings: List[Finding]) -> str:
+    """Return findings as a JSON string.
+
+    Same data as print_json but returns the string instead of printing.
+    """
+    data = [
+        {
+            "file": f.file,
+            "line": f.line,
+            "rule_id": f.rule_id,
+            "secret": f.secret,
+            "fingerprint": f.fingerprint,
+        }
+        for f in findings
+    ]
+    return json.dumps(data, indent=2)
+
+
+def _severity_to_sarif_level(severity: str) -> str:
+    """Map gitshield severity to SARIF level.
+
+    SARIF defines three result levels: error, warning, note.
+    """
+    severity_lower = severity.lower()
+    if severity_lower in ("critical", "high"):
+        return "error"
+    if severity_lower == "medium":
+        return "warning"
+    return "note"
+
+
+def print_sarif(findings: List[Finding]) -> None:
+    """Print findings in SARIF v2.1.0 format.
+
+    SARIF (Static Analysis Results Interchange Format) is GitHub's
+    native format for code scanning alerts. This produces a complete
+    SARIF log object with a single run containing all findings.
+    """
+    # Collect unique rules from findings
+    seen_rules = {}
+    for f in findings:
+        if f.rule_id not in seen_rules:
+            seen_rules[f.rule_id] = {
+                "id": f.rule_id,
+                "shortDescription": {"text": f.rule_id},
+                "defaultConfiguration": {
+                    "level": _severity_to_sarif_level(f.severity),
+                },
+            }
+
+    # Build results array
+    results = []
+    for f in findings:
+        result = {
+            "ruleId": f.rule_id,
+            "message": {"text": f"Secret detected: {f.rule_id}"},
+            "locations": [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": f.file},
+                        "region": {"startLine": f.line},
+                    }
+                }
+            ],
+            "fingerprints": {"gitshield": f.fingerprint},
+        }
+        results.append(result)
+
+    sarif = {
+        "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "GitShield",
+                        "version": __version__,
+                        "informationUri": "https://github.com/bokiko/gitshield",
+                        "rules": list(seen_rules.values()),
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
+
+    print(json.dumps(sarif, indent=2))
 
 
 def print_blocked_message() -> None:
