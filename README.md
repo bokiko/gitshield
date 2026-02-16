@@ -5,8 +5,6 @@
 Catches API keys, passwords, and tokens at three layers: in your editor, before commit, and in CI/CD. The first secret scanner with native [Claude Code](https://claude.ai/claude-code) integration.
 
 [![CI](https://github.com/bokiko/gitshield/actions/workflows/ci.yml/badge.svg)](https://github.com/bokiko/gitshield/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/gitshield)](https://pypi.org/project/gitshield/)
-[![Python](https://img.shields.io/pypi/pyversions/gitshield)](https://pypi.org/project/gitshield/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
