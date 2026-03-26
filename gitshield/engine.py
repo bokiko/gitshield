@@ -116,6 +116,7 @@ def scan_text(
     text: str,
     filename: str = "<stdin>",
     line_offset: int = 0,
+    config_threshold: float = None,
 ) -> List[Finding]:
     """Scan a text string line-by-line against all patterns.
 
@@ -147,8 +148,12 @@ def scan_text(
                 ent = entropy(matched_text)
                 if ent < pattern.entropy_threshold:
                     continue
-            else:
+            elif config_threshold is not None:
                 ent = entropy(matched_text)
+                if ent < config_threshold:
+                    continue
+            else:
+                ent = 0.0
 
             line_number = idx + line_offset
 
@@ -249,7 +254,11 @@ def scan_directory(
     return findings
 
 
-def scan_content(content: str, context: str = "content") -> List[Finding]:
+def scan_content(
+    content: str,
+    context: str = "content",
+    config_threshold: float = None,
+) -> List[Finding]:
     """Quick scan of arbitrary content (convenience wrapper for hooks).
 
     No file I/O — purely in-memory.
@@ -257,11 +266,12 @@ def scan_content(content: str, context: str = "content") -> List[Finding]:
     Args:
         content: The text to scan.
         context: Label used as the ``file`` field in findings.
+        config_threshold: Entropy threshold override for patterns without a threshold.
 
     Returns:
         List of Finding objects.
     """
-    return scan_text(content, filename=context)
+    return scan_text(content, filename=context, config_threshold=config_threshold)
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +298,9 @@ def _scan_staged(root: Path) -> List[Finding]:
         rel_name = rel_name.strip()
         if not rel_name:
             continue
-        file_path = root / rel_name
+        file_path = (root / rel_name).resolve()
+        if not file_path.is_relative_to(root):
+            continue
         if _should_skip_path(file_path):
             continue
         findings.extend(scan_file(file_path))

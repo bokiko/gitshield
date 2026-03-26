@@ -1,5 +1,6 @@
 """GitShield CLI — Prevent accidental secret commits."""
 
+import re
 import sys
 from pathlib import Path
 
@@ -187,10 +188,15 @@ def claude_status():
 @main.command()
 @click.option("--path", "-p", default=".", type=click.Path(exists=True),
               help="Repository path")
-def init(path: str):
+@click.option("--force", is_flag=True, help="Overwrite existing config")
+def init(path: str, force: bool):
     """Create a .gitshield.toml config file with sensible defaults."""
     from .config import create_default_config
-    config_path = create_default_config(Path(path))
+    try:
+        config_path = create_default_config(Path(path), force=force)
+    except FileExistsError as e:
+        click.echo(colorize(f"Error: {e}", Colors.RED), err=True)
+        sys.exit(1)
     click.echo(colorize(f"Created {config_path}", Colors.GREEN))
     click.echo("Edit this file to customize patterns, allowlists, and thresholds.")
 
@@ -221,6 +227,10 @@ def patrol(repo: str, limit: int, dry_run: bool, stats: bool):
                 click.echo(colorize("Error: Use format owner/name", Colors.RED), err=True)
                 sys.exit(1)
             owner, name = repo.split("/", 1)
+            _valid_gh_name = re.compile(r'^[A-Za-z0-9._-]+$')
+            if not _valid_gh_name.match(owner) or not _valid_gh_name.match(name):
+                click.echo(colorize("Error: Invalid repo format", Colors.RED), err=True)
+                sys.exit(1)
             repos = [fetch_repo_info(owner, name)]
             click.echo(f"Scanning {repo}...")
         else:

@@ -4,7 +4,7 @@ import atexit
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Set
 
 # Database location
 DB_DIR = Path.home() / ".gitshield"
@@ -114,6 +114,19 @@ def mark_notified(
         VALUES (?, ?, ?, ?, ?)
     """, (repo_url, email, fingerprint, datetime.now().isoformat(), method))
     conn.commit()
+
+
+def get_notified_fingerprints(repo_url: str, fingerprints: List[str]) -> Set[str]:
+    """Return the subset of *fingerprints* that have already been notified."""
+    if not fingerprints:
+        return set()
+    conn = get_connection()
+    placeholders = ",".join("?" * len(fingerprints))
+    cursor = conn.execute(
+        f"SELECT fingerprint FROM notifications WHERE repo_url = ? AND fingerprint IN ({placeholders})",
+        (repo_url, *fingerprints),
+    )
+    return {row["fingerprint"] for row in cursor.fetchall()}
 
 
 def get_stats() -> dict:

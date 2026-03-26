@@ -30,8 +30,8 @@ def _scan_with_gitleaks(
             "  (GitShield's native engine is still active)"
         )
 
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-        report_path = f.name
+    tmp_dir = tempfile.mkdtemp()
+    report_path = str(Path(tmp_dir) / "report.json")
 
     try:
         cmd = [gitleaks]
@@ -81,7 +81,7 @@ def _scan_with_gitleaks(
         return findings
 
     finally:
-        Path(report_path).unlink(missing_ok=True)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def scan_path(

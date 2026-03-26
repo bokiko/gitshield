@@ -1,13 +1,14 @@
 """Send notifications via email and GitHub issues."""
 
 import os
-from typing import List, Optional
+from typing import List, Optional, Set
 
 import requests
 
+from .config import get_github_token
 from .scanner import Finding
 from .monitor import RepoInfo
-from .db import was_notified, mark_notified
+from .db import was_notified, mark_notified, get_notified_fingerprints
 
 
 class NotifierError(Exception):
@@ -18,11 +19,6 @@ class NotifierError(Exception):
 def get_resend_key() -> Optional[str]:
     """Get Resend API key from environment."""
     return os.environ.get("RESEND_API_KEY")
-
-
-def get_github_token() -> Optional[str]:
-    """Get GitHub token from environment."""
-    return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
 
 
 def send_email(
@@ -203,11 +199,10 @@ def notify(
 
     Returns dict with results.
     """
-    # Filter out already-notified findings
-    new_findings = [
-        f for f in findings
-        if not was_notified(repo.url, f.fingerprint)
-    ]
+    # Filter out already-notified findings (single batch query)
+    fingerprints = [f.fingerprint for f in findings]
+    already_notified = get_notified_fingerprints(repo.url, fingerprints)
+    new_findings = [f for f in findings if f.fingerprint not in already_notified]
 
     if not new_findings:
         return {"skipped": True, "reason": "already_notified"}
