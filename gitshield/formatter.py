@@ -72,26 +72,8 @@ def print_findings(findings: List[Finding], quiet: bool = False) -> None:
     print()
 
 
-def print_json(findings: List[Finding]) -> None:
-    """Print findings as JSON."""
-    data = [
-        {
-            "file": f.file,
-            "line": f.line,
-            "rule_id": f.rule_id,
-            "secret": f.secret,
-            "fingerprint": f.fingerprint,
-        }
-        for f in findings
-    ]
-    print(json.dumps(data, indent=2))
-
-
 def format_findings_json(findings: List[Finding]) -> str:
-    """Return findings as a JSON string.
-
-    Same data as print_json but returns the string instead of printing.
-    """
+    """Return findings as a JSON string."""
     data = [
         {
             "file": f.file,
@@ -103,6 +85,11 @@ def format_findings_json(findings: List[Finding]) -> str:
         for f in findings
     ]
     return json.dumps(data, indent=2)
+
+
+def print_json(findings: List[Finding]) -> None:
+    """Print findings as JSON."""
+    print(format_findings_json(findings))
 
 
 def _severity_to_sarif_level(severity: str) -> str:

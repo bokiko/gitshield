@@ -21,9 +21,10 @@ def _scan_with_gitleaks(
     path: str,
     staged_only: bool = False,
     no_git: bool = False,
+    gitleaks_path: Optional[str] = None,
 ) -> List[Finding]:
     """Run gitleaks and return findings. Raises GitleaksNotFound if missing."""
-    gitleaks = _has_gitleaks()
+    gitleaks = gitleaks_path or _has_gitleaks()
     if not gitleaks:
         raise GitleaksNotFound(
             "gitleaks not found. Install with: brew install gitleaks\n"
@@ -113,9 +114,10 @@ def scan_path(
 
     # Try gitleaks as supplement (not required)
     gitleaks_findings: List[Finding] = []
-    if _has_gitleaks():
+    gitleaks_bin = _has_gitleaks()
+    if gitleaks_bin:
         try:
-            gitleaks_findings = _scan_with_gitleaks(path, staged_only, no_git)
+            gitleaks_findings = _scan_with_gitleaks(path, staged_only, no_git, gitleaks_path=gitleaks_bin)
         except (ScannerError, GitleaksNotFound):
             pass  # Native engine already has results
 
