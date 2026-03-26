@@ -1,6 +1,5 @@
 """GitHub Events API client for monitoring public repos."""
 
-import os
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -10,6 +9,7 @@ import subprocess
 
 import requests
 
+from .config import get_github_token
 from .db import was_scanned_recently, mark_scanned
 from .scanner import scan_path, Finding
 
@@ -28,11 +28,6 @@ class RepoInfo:
 class GitHubError(Exception):
     """GitHub API error."""
     pass
-
-
-def get_github_token() -> Optional[str]:
-    """Get GitHub token from environment."""
-    return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
 
 
 def fetch_public_events(limit: int = 30) -> List[RepoInfo]:
@@ -148,8 +143,8 @@ def clone_and_scan(repo: RepoInfo, skip_recent: bool = True) -> List[Finding]:
     if skip_recent and was_scanned_recently(repo.url):
         return []
 
-    # Create temp directory for clone
-    temp_dir = tempfile.mkdtemp(prefix="gitshield_")
+    # Create temp directory for clone; resolve to handle /tmp -> /private/tmp on macOS.
+    temp_dir = str(Path(tempfile.mkdtemp(prefix="gitshield_")).resolve())
 
     try:
         # Shallow clone (faster, less disk space)

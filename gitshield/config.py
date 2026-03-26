@@ -8,6 +8,7 @@ Supports two config formats:
 from __future__ import annotations
 
 import fnmatch
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -78,6 +79,14 @@ class GitShieldConfig:
     allowlist_rules: List[str] = field(default_factory=list)
     allowlist_fingerprints: Set[str] = field(default_factory=set)
     custom_patterns: List[Dict[str, Any]] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Credential helpers
+# ---------------------------------------------------------------------------
+def get_github_token() -> Optional[str]:
+    """Get GitHub token from environment."""
+    return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
 
 
 # ---------------------------------------------------------------------------
@@ -175,14 +184,20 @@ def load_config(path: Path) -> GitShieldConfig:
 # ---------------------------------------------------------------------------
 # Default config creation
 # ---------------------------------------------------------------------------
-def create_default_config(path: Path) -> Path:
+def create_default_config(path: Path, force: bool = False) -> Path:
     """
     Create a .gitshield.toml with sensible defaults and inline comments.
+
+    Raises FileExistsError if the config already exists and *force* is False.
 
     Returns the path to the created file.
     """
     root = find_git_root(path)
     config_file = root / CONFIG_FILE
+    if config_file.exists() and not force:
+        raise FileExistsError(
+            f"{config_file} already exists. Use --force to overwrite."
+        )
     config_file.write_text(_DEFAULT_CONFIG_TOML, encoding="utf-8")
     return config_file
 

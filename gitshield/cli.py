@@ -1,12 +1,13 @@
 """GitShield CLI — Prevent accidental secret commits."""
 
+import re
 import sys
 from pathlib import Path
 
 import click
 
 from . import __version__
-from .config import filter_findings, load_ignore_list, find_git_root
+from .config import filter_findings, load_config, load_ignore_list, find_git_root
 from .formatter import print_findings, print_json, print_blocked_message, colorize, Colors
 from .scanner import scan_path, ScannerError
 
@@ -32,7 +33,8 @@ def scan(path: str, staged: bool, no_git: bool, as_json: bool, sarif: bool, quie
 
         # Filter ignored
         ignores = load_ignore_list(Path(path))
-        findings = filter_findings(findings, ignores)
+        config = load_config(Path(path))
+        findings = filter_findings(findings, ignores, config=config)
 
         # Output
         if sarif:
@@ -75,7 +77,7 @@ def hook_install(path: str):
     hook_path = hooks_dir / "pre-commit"
 
     # GitShield hook content
-    gitshield_hook = '\n\n# GitShield secret scan\nexport PATH="$PATH:$HOME/Library/Python/3.9/bin:$HOME/.local/bin"\ngitshield scan --staged --quiet\n'
+    gitshield_hook = '\n\n# GitShield secret scan\nexport PATH="$PATH:$HOME/.local/bin"\ngitshield scan --staged --quiet\n'
 
     if hook_path.exists():
         content = hook_path.read_text()
@@ -89,7 +91,7 @@ def hook_install(path: str):
         hook_content = """#!/bin/sh
 # GitShield pre-commit hook
 
-export PATH="$PATH:$HOME/Library/Python/3.9/bin:$HOME/.local/bin"
+export PATH="$PATH:$HOME/.local/bin"
 gitshield scan --staged --quiet
 """
         hook_path.write_text(hook_content)
@@ -119,16 +121,27 @@ def hook_uninstall(path: str):
 
     lines = content.split("\n")
     new_lines = []
-    skip_next = False
+    in_block = False
 
     for line in lines:
         if "# GitShield" in line:
-            skip_next = True
+            in_block = True
             continue
-        if skip_next and "gitshield" in line:
-            skip_next = False
+        if in_block:
+            if not line.strip():
+                # Skip blank lines within the block
+                continue
+            if "gitshield" in line.lower():
+                # The gitshield command line — block ends after this
+                in_block = False
+                continue
+            if line.startswith("export"):
+                # PATH export added by gitshield block
+                continue
+            # Non-gitshield content encountered — end of block
+            in_block = False
+            new_lines.append(line)
             continue
-        skip_next = False
         new_lines.append(line)
 
     new_content = "\n".join(new_lines).strip()
@@ -175,10 +188,15 @@ def claude_status():
 @main.command()
 @click.option("--path", "-p", default=".", type=click.Path(exists=True),
               help="Repository path")
-def init(path: str):
+@click.option("--force", is_flag=True, help="Overwrite existing config")
+def init(path: str, force: bool):
     """Create a .gitshield.toml config file with sensible defaults."""
     from .config import create_default_config
-    config_path = create_default_config(Path(path))
+    try:
+        config_path = create_default_config(Path(path), force=force)
+    except FileExistsError as e:
+        click.echo(colorize(f"Error: {e}", Colors.RED), err=True)
+        sys.exit(1)
     click.echo(colorize(f"Created {config_path}", Colors.GREEN))
     click.echo("Edit this file to customize patterns, allowlists, and thresholds.")
 
@@ -192,7 +210,7 @@ def init(path: str):
 @click.option("--stats", is_flag=True, help="Show scanning statistics")
 def patrol(repo: str, limit: int, dry_run: bool, stats: bool):
     """Scan public GitHub repos for leaked secrets."""
-    from .monitor import fetch_public_events, fetch_repo_info, clone_and_scan
+    from .monitor import fetch_public_events, fetch_repo_info, clone_and_scan, GitHubError
     from .notifier import notify
     from .db import get_stats
 
@@ -209,6 +227,10 @@ def patrol(repo: str, limit: int, dry_run: bool, stats: bool):
                 click.echo(colorize("Error: Use format owner/name", Colors.RED), err=True)
                 sys.exit(1)
             owner, name = repo.split("/", 1)
+            _valid_gh_name = re.compile(r'^[A-Za-z0-9._-]+$')
+            if not _valid_gh_name.match(owner) or not _valid_gh_name.match(name):
+                click.echo(colorize("Error: Invalid repo format", Colors.RED), err=True)
+                sys.exit(1)
             repos = [fetch_repo_info(owner, name)]
             click.echo(f"Scanning {repo}...")
         else:
@@ -255,10 +277,10 @@ def patrol(repo: str, limit: int, dry_run: bool, stats: bool):
         click.echo(f"  Secrets found: {total_findings}")
         click.echo(f"  Notifications: {notified_count}")
 
+    except GitHubError as e:
+        click.echo(colorize(f"Error: {e}", Colors.RED), err=True)
+        sys.exit(1)
     except Exception as e:
-        if "GitHubError" in type(e).__name__:
-            click.echo(colorize(f"Error: {e}", Colors.RED), err=True)
-            sys.exit(1)
         click.echo(colorize(f"Error: {e}", Colors.RED), err=True)
         sys.exit(2)
 

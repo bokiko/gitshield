@@ -4,33 +4,12 @@ import json
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-
-@dataclass
-class Finding:
-    """A detected secret."""
-    file: str
-    line: int
-    rule_id: str
-    secret: str
-    fingerprint: str
-    entropy: float = 0.0
-    commit: Optional[str] = None
-    author: Optional[str] = None
-    severity: str = "medium"
-
-
-class ScannerError(Exception):
-    """Scanner-related errors."""
-    pass
-
-
-class GitleaksNotFound(ScannerError):
-    """Gitleaks binary not installed (non-fatal — native engine still works)."""
-    pass
+# Re-export from models.py so existing imports of Finding/ScannerError/GitleaksNotFound
+# from .scanner continue to work without modification.
+from .models import Finding, GitleaksNotFound, ScannerError  # noqa: F401
 
 
 def _has_gitleaks() -> Optional[str]:
@@ -42,17 +21,18 @@ def _scan_with_gitleaks(
     path: str,
     staged_only: bool = False,
     no_git: bool = False,
+    gitleaks_path: Optional[str] = None,
 ) -> List[Finding]:
     """Run gitleaks and return findings. Raises GitleaksNotFound if missing."""
-    gitleaks = _has_gitleaks()
+    gitleaks = gitleaks_path or _has_gitleaks()
     if not gitleaks:
         raise GitleaksNotFound(
             "gitleaks not found. Install with: brew install gitleaks\n"
             "  (GitShield's native engine is still active)"
         )
 
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-        report_path = f.name
+    tmp_dir = tempfile.mkdtemp()
+    report_path = str(Path(tmp_dir) / "report.json")
 
     try:
         cmd = [gitleaks]
@@ -102,7 +82,7 @@ def _scan_with_gitleaks(
         return findings
 
     finally:
-        Path(report_path).unlink(missing_ok=True)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def scan_path(
@@ -134,9 +114,10 @@ def scan_path(
 
     # Try gitleaks as supplement (not required)
     gitleaks_findings: List[Finding] = []
-    if _has_gitleaks():
+    gitleaks_bin = _has_gitleaks()
+    if gitleaks_bin:
         try:
-            gitleaks_findings = _scan_with_gitleaks(path, staged_only, no_git)
+            gitleaks_findings = _scan_with_gitleaks(path, staged_only, no_git, gitleaks_path=gitleaks_bin)
         except (ScannerError, GitleaksNotFound):
             pass  # Native engine already has results
 

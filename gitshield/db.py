@@ -1,22 +1,39 @@
 """SQLite database for tracking scanned repos and notifications."""
 
+import atexit
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Set
 
 # Database location
 DB_DIR = Path.home() / ".gitshield"
 DB_PATH = DB_DIR / "gitshield.db"
 
+# Module-level singleton connection — initialized on first use.
+_conn: Optional[sqlite3.Connection] = None
+
+
+def _close_connection() -> None:
+    """Close the singleton connection on process exit."""
+    global _conn
+    if _conn is not None:
+        _conn.close()
+        _conn = None
+
+
+atexit.register(_close_connection)
+
 
 def get_connection() -> sqlite3.Connection:
-    """Get database connection, creating tables if needed."""
-    DB_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    _init_tables(conn)
-    return conn
+    """Return the module-level DB connection, creating it on first call."""
+    global _conn
+    if _conn is None:
+        DB_DIR.mkdir(parents=True, exist_ok=True)
+        _conn = sqlite3.connect(DB_PATH)
+        _conn.row_factory = sqlite3.Row
+        _init_tables(_conn)
+    return _conn
 
 
 def _init_tables(conn: sqlite3.Connection) -> None:
@@ -51,7 +68,6 @@ def was_scanned_recently(repo_url: str, hours: int = 24) -> bool:
         (repo_url,)
     )
     row = cursor.fetchone()
-    conn.close()
 
     if not row:
         return False
@@ -72,7 +88,6 @@ def mark_scanned(repo_url: str, findings_count: int = 0) -> None:
             findings_count = excluded.findings_count
     """, (repo_url, datetime.now().isoformat(), findings_count))
     conn.commit()
-    conn.close()
 
 
 def was_notified(repo_url: str, fingerprint: str) -> bool:
@@ -82,9 +97,7 @@ def was_notified(repo_url: str, fingerprint: str) -> bool:
         "SELECT id FROM notifications WHERE repo_url = ? AND fingerprint = ?",
         (repo_url, fingerprint)
     )
-    result = cursor.fetchone() is not None
-    conn.close()
-    return result
+    return cursor.fetchone() is not None
 
 
 def mark_notified(
@@ -101,7 +114,19 @@ def mark_notified(
         VALUES (?, ?, ?, ?, ?)
     """, (repo_url, email, fingerprint, datetime.now().isoformat(), method))
     conn.commit()
-    conn.close()
+
+
+def get_notified_fingerprints(repo_url: str, fingerprints: List[str]) -> Set[str]:
+    """Return the subset of *fingerprints* that have already been notified."""
+    if not fingerprints:
+        return set()
+    conn = get_connection()
+    placeholders = ",".join("?" * len(fingerprints))
+    cursor = conn.execute(
+        f"SELECT fingerprint FROM notifications WHERE repo_url = ? AND fingerprint IN ({placeholders})",
+        (repo_url, *fingerprints),
+    )
+    return {row["fingerprint"] for row in cursor.fetchall()}
 
 
 def get_stats() -> dict:
@@ -111,8 +136,6 @@ def get_stats() -> dict:
     repos = conn.execute("SELECT COUNT(*) FROM scanned_repos").fetchone()[0]
     findings = conn.execute("SELECT SUM(findings_count) FROM scanned_repos").fetchone()[0] or 0
     notifications = conn.execute("SELECT COUNT(*) FROM notifications").fetchone()[0]
-
-    conn.close()
 
     return {
         "repos_scanned": repos,
