@@ -77,7 +77,7 @@ def hook_install(path: str):
     hook_path = hooks_dir / "pre-commit"
 
     # GitShield hook content
-    gitshield_hook = '\n\n# GitShield secret scan\nexport PATH="$PATH:$HOME/Library/Python/3.9/bin:$HOME/.local/bin"\ngitshield scan --staged --quiet\n'
+    gitshield_hook = '\n\n# GitShield secret scan\nexport PATH="$PATH:$HOME/.local/bin"\ngitshield scan --staged --quiet\n'
 
     if hook_path.exists():
         content = hook_path.read_text()
@@ -91,7 +91,7 @@ def hook_install(path: str):
         hook_content = """#!/bin/sh
 # GitShield pre-commit hook
 
-export PATH="$PATH:$HOME/Library/Python/3.9/bin:$HOME/.local/bin"
+export PATH="$PATH:$HOME/.local/bin"
 gitshield scan --staged --quiet
 """
         hook_path.write_text(hook_content)

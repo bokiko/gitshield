@@ -8,7 +8,7 @@ import fnmatch
 import os
 import subprocess
 from pathlib import Path
-from typing import List, Set, Union
+from typing import List, Optional, Set, Union
 
 from .models import Finding
 from .patterns import entropy, PATTERNS
@@ -116,7 +116,7 @@ def scan_text(
     text: str,
     filename: str = "<stdin>",
     line_offset: int = 0,
-    config_threshold: float = None,
+    config_threshold: Optional[float] = None,
 ) -> List[Finding]:
     """Scan a text string line-by-line against all patterns.
 
@@ -257,7 +257,7 @@ def scan_directory(
 def scan_content(
     content: str,
     context: str = "content",
-    config_threshold: float = None,
+    config_threshold: Optional[float] = None,
 ) -> List[Finding]:
     """Quick scan of arbitrary content (convenience wrapper for hooks).
 
