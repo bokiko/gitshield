@@ -5,12 +5,13 @@ detection. Operates on text, files, and directory trees.
 """
 
 import fnmatch
+import os
 import subprocess
 from pathlib import Path
 from typing import List, Set, Union
 
+from .models import Finding
 from .patterns import entropy, PATTERNS
-from .scanner import Finding
 
 # Directories to always skip during tree walks.
 _SKIP_DIRS: Set[str] = {
@@ -224,23 +225,26 @@ def scan_directory(
 
     findings: List[Finding] = []
 
-    for file_path in root.rglob("*"):
-        if not file_path.is_file():
-            continue
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Prune skip directories in-place to prevent descending into them.
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
 
-        if _should_skip_path(file_path):
-            continue
+        for filename in filenames:
+            file_path = Path(dirpath) / filename
 
-        # Gitignore filtering.
-        if ignore_patterns:
-            try:
-                rel = str(file_path.relative_to(root))
-            except ValueError:
-                rel = str(file_path)
-            if _matches_gitignore(rel, ignore_patterns):
+            if _should_skip_path(file_path):
                 continue
 
-        findings.extend(scan_file(file_path))
+            # Gitignore filtering.
+            if ignore_patterns:
+                try:
+                    rel = str(file_path.relative_to(root))
+                except ValueError:
+                    rel = str(file_path)
+                if _matches_gitignore(rel, ignore_patterns):
+                    continue
+
+            findings.extend(scan_file(file_path))
 
     return findings
 

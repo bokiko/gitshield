@@ -149,9 +149,10 @@ def main() -> None:
         input_data = json.loads(raw)
         result = handle_hook(input_data)
         print(json.dumps(result))
-    except Exception:
+    except Exception as e:
         # Fail open — never block on hook errors
         print(json.dumps({"result": "approve"}))
+        print(f"gitshield hook error: {e}", file=sys.stderr)
     sys.exit(0)
 
 

@@ -1,6 +1,7 @@
 """Pretty terminal output for scan results."""
 
 import json
+import shlex
 import sys
 from typing import List
 
@@ -66,7 +67,7 @@ def print_findings(findings: List[Finding], quiet: bool = False) -> None:
     print(colorize("  False positive? Copy & paste to ignore:", Colors.YELLOW))
     print()
     for f in findings:
-        cmd = f'echo "{f.fingerprint}" >> .gitshieldignore'
+        cmd = f'echo {shlex.quote(f.fingerprint)} >> .gitshieldignore'
         print(colorize(f"    {cmd}", Colors.DIM))
     print()
 

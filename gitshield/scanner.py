@@ -4,33 +4,12 @@ import json
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-
-@dataclass
-class Finding:
-    """A detected secret."""
-    file: str
-    line: int
-    rule_id: str
-    secret: str
-    fingerprint: str
-    entropy: float = 0.0
-    commit: Optional[str] = None
-    author: Optional[str] = None
-    severity: str = "medium"
-
-
-class ScannerError(Exception):
-    """Scanner-related errors."""
-    pass
-
-
-class GitleaksNotFound(ScannerError):
-    """Gitleaks binary not installed (non-fatal — native engine still works)."""
-    pass
+# Re-export from models.py so existing imports of Finding/ScannerError/GitleaksNotFound
+# from .scanner continue to work without modification.
+from .models import Finding, GitleaksNotFound, ScannerError  # noqa: F401
 
 
 def _has_gitleaks() -> Optional[str]:

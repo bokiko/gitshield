@@ -6,7 +6,7 @@ from pathlib import Path
 import click
 
 from . import __version__
-from .config import filter_findings, load_ignore_list, find_git_root
+from .config import filter_findings, load_config, load_ignore_list, find_git_root
 from .formatter import print_findings, print_json, print_blocked_message, colorize, Colors
 from .scanner import scan_path, ScannerError
 
@@ -32,7 +32,8 @@ def scan(path: str, staged: bool, no_git: bool, as_json: bool, sarif: bool, quie
 
         # Filter ignored
         ignores = load_ignore_list(Path(path))
-        findings = filter_findings(findings, ignores)
+        config = load_config(Path(path))
+        findings = filter_findings(findings, ignores, config=config)
 
         # Output
         if sarif:
@@ -119,16 +120,27 @@ def hook_uninstall(path: str):
 
     lines = content.split("\n")
     new_lines = []
-    skip_next = False
+    in_block = False
 
     for line in lines:
         if "# GitShield" in line:
-            skip_next = True
+            in_block = True
             continue
-        if skip_next and "gitshield" in line:
-            skip_next = False
+        if in_block:
+            if not line.strip():
+                # Skip blank lines within the block
+                continue
+            if "gitshield" in line.lower():
+                # The gitshield command line — block ends after this
+                in_block = False
+                continue
+            if line.startswith("export"):
+                # PATH export added by gitshield block
+                continue
+            # Non-gitshield content encountered — end of block
+            in_block = False
+            new_lines.append(line)
             continue
-        skip_next = False
         new_lines.append(line)
 
     new_content = "\n".join(new_lines).strip()
@@ -192,7 +204,7 @@ def init(path: str):
 @click.option("--stats", is_flag=True, help="Show scanning statistics")
 def patrol(repo: str, limit: int, dry_run: bool, stats: bool):
     """Scan public GitHub repos for leaked secrets."""
-    from .monitor import fetch_public_events, fetch_repo_info, clone_and_scan
+    from .monitor import fetch_public_events, fetch_repo_info, clone_and_scan, GitHubError
     from .notifier import notify
     from .db import get_stats
 
@@ -255,10 +267,10 @@ def patrol(repo: str, limit: int, dry_run: bool, stats: bool):
         click.echo(f"  Secrets found: {total_findings}")
         click.echo(f"  Notifications: {notified_count}")
 
+    except GitHubError as e:
+        click.echo(colorize(f"Error: {e}", Colors.RED), err=True)
+        sys.exit(1)
     except Exception as e:
-        if "GitHubError" in type(e).__name__:
-            click.echo(colorize(f"Error: {e}", Colors.RED), err=True)
-            sys.exit(1)
         click.echo(colorize(f"Error: {e}", Colors.RED), err=True)
         sys.exit(2)
 
