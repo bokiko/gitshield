@@ -5,7 +5,7 @@ import sys
 from typing import List
 
 from .engine import scan_content
-from .scanner import Finding
+from .models import Finding
 
 
 # Files that should legitimately contain secrets (don't block)
@@ -150,9 +150,13 @@ def main() -> None:
         result = handle_hook(input_data)
         print(json.dumps(result))
     except Exception as e:
-        # Fail open — never block on hook errors
+        # Fail open — never block on hook errors.
         print(json.dumps({"result": "approve"}))
-        print(f"gitshield hook error: {e}", file=sys.stderr)
+        print(
+            f"gitshield: scanning failed ({type(e).__name__}), "
+            f"tool call approved without scan: {e}",
+            file=sys.stderr,
+        )
     sys.exit(0)
 
 

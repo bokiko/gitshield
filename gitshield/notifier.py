@@ -6,7 +6,7 @@ from typing import List, Optional, Set
 import requests
 
 from .config import get_github_token
-from .scanner import Finding
+from .models import Finding
 from .monitor import RepoInfo
 from .db import was_notified, mark_notified, get_notified_fingerprints
 

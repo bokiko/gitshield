@@ -6,7 +6,7 @@ import sys
 from typing import List
 
 from . import __version__
-from .scanner import Finding
+from .models import Finding
 
 
 # ANSI colors

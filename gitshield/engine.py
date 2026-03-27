@@ -40,6 +40,10 @@ _IGNORE_MARKERS = (
     "-- gitshield:ignore",
 )
 
+# ReDoS mitigations: cap gitignore pattern count and length.
+_MAX_GITIGNORE_PATTERNS: int = 500
+_MAX_GITIGNORE_PATTERN_LEN: int = 200
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -85,10 +89,13 @@ def _parse_gitignore(root: Path) -> List[str]:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
+            # Skip pathologically long patterns that could cause ReDoS.
+            if len(line) > _MAX_GITIGNORE_PATTERN_LEN:
+                continue
             patterns.append(line)
     except OSError:
         pass
-    return patterns
+    return patterns[:_MAX_GITIGNORE_PATTERNS]
 
 
 def _matches_gitignore(rel_path: str, ignore_patterns: List[str]) -> bool:
@@ -117,6 +124,7 @@ def scan_text(
     filename: str = "<stdin>",
     line_offset: int = 0,
     config_threshold: Optional[float] = None,
+    extra_patterns: Optional[List] = None,
 ) -> List[Finding]:
     """Scan a text string line-by-line against all patterns.
 
@@ -130,26 +138,34 @@ def scan_text(
     """
     findings: List[Finding] = []
     lines = text.splitlines()
+    all_patterns = list(PATTERNS) + list(extra_patterns or [])
 
     for idx, line in enumerate(lines, start=1):
         # Honour inline ignore directives.
         if any(marker in line for marker in _IGNORE_MARKERS):
             continue
 
-        for pattern in PATTERNS:
+        for pattern in all_patterns:
             match = pattern.regex.search(line)
             if match is None:
                 continue
 
             matched_text = match.group(0)
+            # Use the first capturing group for entropy/display when available.
+            # This avoids prefix inflation (e.g. 'api_key = ' before the value).
+            secret_text = (
+                match.group(1)
+                if match.lastindex and match.lastindex >= 1
+                else matched_text
+            )
 
             # If the pattern specifies an entropy threshold, enforce it.
             if pattern.entropy_threshold is not None:
-                ent = entropy(matched_text)
+                ent = entropy(secret_text)
                 if ent < pattern.entropy_threshold:
                     continue
             elif config_threshold is not None:
-                ent = entropy(matched_text)
+                ent = entropy(secret_text)
                 if ent < config_threshold:
                     continue
             else:
@@ -161,7 +177,7 @@ def scan_text(
                 file=filename,
                 line=line_number,
                 rule_id=pattern.id,
-                secret=_truncate(matched_text),
+                secret=_truncate(secret_text),
                 fingerprint=f"{filename}:{pattern.id}:{line_number}",
                 entropy=ent,
                 severity=pattern.severity,
@@ -170,7 +186,11 @@ def scan_text(
     return findings
 
 
-def scan_file(filepath: Union[str, Path]) -> List[Finding]:
+def scan_file(
+    filepath: Union[str, Path],
+    config_threshold: Optional[float] = None,
+    extra_patterns: Optional[List] = None,
+) -> List[Finding]:
     """Scan a single file for secrets.
 
     Binary files (null bytes in the first 8 KB) are silently skipped.
@@ -178,6 +198,8 @@ def scan_file(filepath: Union[str, Path]) -> List[Finding]:
 
     Args:
         filepath: Path to the file to scan.
+        config_threshold: Entropy threshold override for patterns without one.
+        extra_patterns: Additional Pattern objects beyond the built-in list.
 
     Returns:
         List of Finding objects.
@@ -195,7 +217,12 @@ def scan_file(filepath: Union[str, Path]) -> List[Finding]:
     except (OSError, IOError):
         return []
 
-    return scan_text(text, filename=str(filepath))
+    return scan_text(
+        text,
+        filename=str(filepath),
+        config_threshold=config_threshold,
+        extra_patterns=extra_patterns,
+    )
 
 
 def scan_directory(
@@ -203,6 +230,8 @@ def scan_directory(
     staged_only: bool = False,
     no_git: bool = False,
     respect_gitignore: bool = True,
+    config_threshold: Optional[float] = None,
+    extra_patterns: Optional[List] = None,
 ) -> List[Finding]:
     """Walk a directory tree and scan every eligible file.
 
@@ -211,6 +240,8 @@ def scan_directory(
         staged_only: If True, only scan files staged in git (``git diff --cached``).
         no_git: If True, ignore git entirely (no gitignore, no staged filter).
         respect_gitignore: Honour ``.gitignore`` patterns (unless *no_git*).
+        config_threshold: Entropy threshold override for patterns without one.
+        extra_patterns: Additional Pattern objects beyond the built-in list.
 
     Returns:
         Aggregated list of Finding objects.
@@ -249,7 +280,13 @@ def scan_directory(
                 if _matches_gitignore(rel, ignore_patterns):
                     continue
 
-            findings.extend(scan_file(file_path))
+            findings.extend(
+                scan_file(
+                    file_path,
+                    config_threshold=config_threshold,
+                    extra_patterns=extra_patterns,
+                )
+            )
 
     return findings
 
@@ -258,6 +295,7 @@ def scan_content(
     content: str,
     context: str = "content",
     config_threshold: Optional[float] = None,
+    extra_patterns: Optional[List] = None,
 ) -> List[Finding]:
     """Quick scan of arbitrary content (convenience wrapper for hooks).
 
@@ -267,11 +305,17 @@ def scan_content(
         content: The text to scan.
         context: Label used as the ``file`` field in findings.
         config_threshold: Entropy threshold override for patterns without a threshold.
+        extra_patterns: Additional Pattern objects beyond the built-in list.
 
     Returns:
         List of Finding objects.
     """
-    return scan_text(content, filename=context, config_threshold=config_threshold)
+    return scan_text(
+        content,
+        filename=context,
+        config_threshold=config_threshold,
+        extra_patterns=extra_patterns,
+    )
 
 
 # ---------------------------------------------------------------------------

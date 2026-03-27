@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 
 from . import __version__
-from .config import filter_findings, load_config, load_ignore_list, find_git_root
+from .config import build_custom_patterns, filter_findings, load_config, load_ignore_list, find_git_root
 from .formatter import print_findings, print_json, print_blocked_message, colorize, Colors
 from .scanner import scan_path, ScannerError
 

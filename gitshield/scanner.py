@@ -1,5 +1,6 @@
 """Secret detection — native engine + optional gitleaks fallback."""
 
+import functools
 import json
 import shutil
 import subprocess
@@ -12,8 +13,13 @@ from typing import List, Optional
 from .models import Finding, GitleaksNotFound, ScannerError  # noqa: F401
 
 
+@functools.lru_cache(maxsize=None)
 def _has_gitleaks() -> Optional[str]:
-    """Return gitleaks binary path if installed, else None."""
+    """Return gitleaks binary path if installed, else None.
+
+    Cached for the process lifetime — the binary won't appear or disappear
+    during a single run, and this is called on every hook invocation.
+    """
     return shutil.which("gitleaks")
 
 
@@ -89,11 +95,20 @@ def scan_path(
     path: str,
     staged_only: bool = False,
     no_git: bool = False,
+    config_threshold: Optional[float] = None,
+    extra_patterns: Optional[List] = None,
 ) -> List[Finding]:
     """Scan a path for secrets using native engine + optional gitleaks.
 
     The native engine always runs. If gitleaks is installed, both engines
     run and results are merged (deduplicated by fingerprint).
+
+    Args:
+        path: File or directory path to scan.
+        staged_only: Scan only git-staged files.
+        no_git: Ignore git entirely.
+        config_threshold: Entropy threshold override for patterns without one.
+        extra_patterns: Additional Pattern objects beyond the built-in list.
     """
     resolved = Path(path).resolve()
     if not resolved.exists():
@@ -104,12 +119,18 @@ def scan_path(
 
     # Always run native engine
     if resolved.is_file():
-        native_findings = scan_file(resolved)
+        native_findings = scan_file(
+            resolved,
+            config_threshold=config_threshold,
+            extra_patterns=extra_patterns,
+        )
     else:
         native_findings = scan_directory(
             resolved,
             staged_only=staged_only,
             no_git=no_git,
+            config_threshold=config_threshold,
+            extra_patterns=extra_patterns,
         )
 
     # Try gitleaks as supplement (not required)
