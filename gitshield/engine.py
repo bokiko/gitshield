@@ -6,6 +6,7 @@ detection. Operates on text, files, and directory trees.
 
 import fnmatch
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import List, Optional, Set, Union
@@ -44,6 +45,9 @@ _IGNORE_MARKERS = (
 _MAX_GITIGNORE_PATTERNS: int = 500
 _MAX_GITIGNORE_PATTERN_LEN: int = 200
 
+# Test file patterns -- skipped when scan_tests=False.
+_TEST_FILE_PATTERNS = ("test_*.py", "*_test.py")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -68,8 +72,8 @@ def _is_binary_file(filepath: Path) -> bool:
 
 def _should_skip_path(path: Path) -> bool:
     """Return True if *path* should be skipped based on directory name or extension."""
-    # Check each component for skip-listed directory names.
-    for part in path.parts:
+    # Check only directory components for skip-listed directory names (not filename).
+    for part in path.parent.parts:
         if part in _SKIP_DIRS:
             return True
     # Check binary extensions.
@@ -98,19 +102,30 @@ def _parse_gitignore(root: Path) -> List[str]:
     return patterns[:_MAX_GITIGNORE_PATTERNS]
 
 
-def _matches_gitignore(rel_path: str, ignore_patterns: List[str]) -> bool:
-    """Return True if *rel_path* matches any gitignore pattern."""
-    for pattern in ignore_patterns:
-        # Directory-only pattern (trailing slash): match against path components.
+def _compile_gitignore_patterns(patterns: List[str]) -> List[tuple]:
+    """Pre-compile gitignore patterns into (is_dir, compiled_regex) tuples."""
+    compiled = []
+    for pattern in patterns:
         if pattern.endswith("/"):
             dir_pattern = pattern.rstrip("/")
-            if any(fnmatch.fnmatch(part, dir_pattern) for part in Path(rel_path).parts):
+            compiled.append((True, re.compile(fnmatch.translate(dir_pattern))))
+        else:
+            compiled.append((False, re.compile(fnmatch.translate(pattern))))
+    return compiled
+
+
+def _matches_gitignore(rel_path: str, ignore_patterns: List[tuple]) -> bool:
+    """Return True if *rel_path* matches any pre-compiled gitignore pattern."""
+    for is_dir, compiled_re in ignore_patterns:
+        if is_dir:
+            # Directory-only pattern: match against path components.
+            if any(compiled_re.fullmatch(part) for part in Path(rel_path).parts):
                 return True
         else:
             # Match against full relative path and also the basename.
-            if fnmatch.fnmatch(rel_path, pattern):
+            if compiled_re.fullmatch(rel_path):
                 return True
-            if fnmatch.fnmatch(Path(rel_path).name, pattern):
+            if compiled_re.fullmatch(Path(rel_path).name):
                 return True
     return False
 
@@ -209,12 +224,19 @@ def scan_file(
     if not filepath.is_file():
         return []
 
-    if _is_binary_file(filepath):
+    # Single-read: check for binary (null bytes in first 8 KB) and decode in one pass.
+    try:
+        with open(filepath, "rb") as fh:
+            raw = fh.read()
+    except (OSError, IOError):
+        return []
+
+    if b"\x00" in raw[:8192]:
         return []
 
     try:
-        text = filepath.read_text(encoding="utf-8", errors="replace")
-    except (OSError, IOError):
+        text = raw.decode("utf-8", errors="replace")
+    except (UnicodeDecodeError, ValueError):
         return []
 
     return scan_text(
@@ -225,6 +247,14 @@ def scan_file(
     )
 
 
+def _is_test_file(filename: str) -> bool:
+    """Return True if *filename* matches a test file pattern."""
+    for pattern in _TEST_FILE_PATTERNS:
+        if fnmatch.fnmatch(filename, pattern):
+            return True
+    return False
+
+
 def scan_directory(
     path: Union[str, Path],
     staged_only: bool = False,
@@ -232,6 +262,7 @@ def scan_directory(
     respect_gitignore: bool = True,
     config_threshold: Optional[float] = None,
     extra_patterns: Optional[List] = None,
+    scan_tests: bool = True,
 ) -> List[Finding]:
     """Walk a directory tree and scan every eligible file.
 
@@ -242,6 +273,7 @@ def scan_directory(
         respect_gitignore: Honour ``.gitignore`` patterns (unless *no_git*).
         config_threshold: Entropy threshold override for patterns without one.
         extra_patterns: Additional Pattern objects beyond the built-in list.
+        scan_tests: If False, skip test files (test_*.py, *_test.py).
 
     Returns:
         Aggregated list of Finding objects.
@@ -255,9 +287,10 @@ def scan_directory(
         return _scan_staged(root)
 
     # ---- full tree walk ----
-    ignore_patterns: List[str] = []
+    ignore_patterns: List[tuple] = []
     if respect_gitignore and not no_git:
-        ignore_patterns = _parse_gitignore(root)
+        raw_patterns = _parse_gitignore(root)
+        ignore_patterns = _compile_gitignore_patterns(raw_patterns)
 
     findings: List[Finding] = []
 
@@ -269,6 +302,10 @@ def scan_directory(
             file_path = Path(dirpath) / filename
 
             if _should_skip_path(file_path):
+                continue
+
+            # Skip test files when scan_tests is disabled.
+            if not scan_tests and _is_test_file(filename):
                 continue
 
             # Gitignore filtering.
@@ -330,7 +367,10 @@ def _scan_staged(root: Path) -> List[Finding]:
             capture_output=True,
             text=True,
             cwd=str(root),
+            timeout=30,
         )
+    except subprocess.TimeoutExpired:
+        return []
     except (OSError, FileNotFoundError):
         return []
 

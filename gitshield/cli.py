@@ -29,11 +29,11 @@ def main():
 def scan(path: str, staged: bool, no_git: bool, as_json: bool, sarif: bool, quiet: bool):
     """Scan for secrets in PATH (default: current directory)."""
     try:
-        findings = scan_path(path, staged_only=staged, no_git=no_git)
+        config = load_config(Path(path))
+        findings = scan_path(path, staged_only=staged, no_git=no_git, scan_tests=config.scan_tests)
 
         # Filter ignored
         ignores = load_ignore_list(Path(path))
-        config = load_config(Path(path))
         findings = filter_findings(findings, ignores, config=config)
 
         # Output
@@ -277,12 +277,9 @@ def patrol(repo: str, limit: int, dry_run: bool, stats: bool):
         click.echo(f"  Secrets found: {total_findings}")
         click.echo(f"  Notifications: {notified_count}")
 
-    except GitHubError as e:
+    except (GitHubError, ScannerError) as e:
         click.echo(colorize(f"Error: {e}", Colors.RED), err=True)
         sys.exit(1)
-    except Exception as e:
-        click.echo(colorize(f"Error: {e}", Colors.RED), err=True)
-        sys.exit(2)
 
 
 if __name__ == "__main__":

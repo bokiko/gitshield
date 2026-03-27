@@ -2,6 +2,7 @@
 
 import functools
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -39,6 +40,8 @@ def _scan_with_gitleaks(
 
     tmp_dir = tempfile.mkdtemp()
     report_path = str(Path(tmp_dir) / "report.json")
+    # Restrict report file permissions on multi-user systems.
+    os.chmod(tmp_dir, 0o700)
 
     try:
         cmd = [gitleaks]
@@ -57,12 +60,14 @@ def _scan_with_gitleaks(
             "--exit-code", "0",
         ])
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
         if result.stderr and "error" in result.stderr.lower():
             raise ScannerError(f"Gitleaks error: {result.stderr.strip()}")
 
         report_file = Path(report_path)
+        if report_file.exists():
+            os.chmod(report_path, 0o600)
         if not report_file.exists() or report_file.stat().st_size == 0:
             return []
 
@@ -87,6 +92,8 @@ def _scan_with_gitleaks(
 
         return findings
 
+    except subprocess.TimeoutExpired:
+        return []
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -97,6 +104,7 @@ def scan_path(
     no_git: bool = False,
     config_threshold: Optional[float] = None,
     extra_patterns: Optional[List] = None,
+    scan_tests: bool = True,
 ) -> List[Finding]:
     """Scan a path for secrets using native engine + optional gitleaks.
 
@@ -131,6 +139,7 @@ def scan_path(
             no_git=no_git,
             config_threshold=config_threshold,
             extra_patterns=extra_patterns,
+            scan_tests=scan_tests,
         )
 
     # Try gitleaks as supplement (not required)

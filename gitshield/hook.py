@@ -35,10 +35,15 @@ SENSITIVE_PATHS = [
 def _is_allowed_path(filepath: str) -> bool:
     """Check if filepath is in the allowlist (test files, examples, etc.)."""
     import fnmatch
+    from pathlib import Path as _Path
     lower = filepath.lower()
+    path_parts = _Path(lower).parts
+    dir_parts = _Path(lower).parent.parts
     for pattern in ALLOWED_PATHS:
         if pattern.endswith("/"):
-            if f"/{pattern}" in lower or lower.startswith(pattern):
+            # Directory allowlist: check if any path component exactly matches
+            dir_name = pattern.rstrip("/")
+            if dir_name in dir_parts:
                 return True
         elif "*" in pattern:
             if fnmatch.fnmatch(filepath.split("/")[-1], pattern):

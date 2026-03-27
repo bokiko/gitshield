@@ -8,6 +8,7 @@ Supports two config formats:
 from __future__ import annotations
 
 import fnmatch
+import functools
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -206,14 +207,22 @@ def create_default_config(path: Path, force: bool = False) -> Path:
 # ---------------------------------------------------------------------------
 # Filtering
 # ---------------------------------------------------------------------------
+@functools.lru_cache(maxsize=512)
+def _compile_glob(pattern: str):
+    """Compile a glob pattern to a regex (cached)."""
+    import re
+    return re.compile(fnmatch.translate(pattern))
+
+
 def _matches_any_glob(filepath: str, patterns: List[str]) -> bool:
     """Check if *filepath* matches any of the given glob patterns."""
     for pattern in patterns:
+        compiled = _compile_glob(pattern)
         # Match against the full relative path
-        if fnmatch.fnmatch(filepath, pattern):
+        if compiled.fullmatch(filepath):
             return True
         # Also match against just the filename
-        if fnmatch.fnmatch(Path(filepath).name, pattern):
+        if compiled.fullmatch(Path(filepath).name):
             return True
     return False
 
