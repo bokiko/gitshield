@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional, Set, Union
 
-from .models import Finding
+from .models import Finding, truncate_secret
 from .patterns import entropy, PATTERNS
 
 # Directories to always skip during tree walks.
@@ -52,12 +52,6 @@ _TEST_FILE_PATTERNS = ("test_*.py", "*_test.py")
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _truncate(text: str, max_len: int = 20) -> str:
-    """Truncate secret for safe display."""
-    if len(text) <= max_len:
-        return text
-    return text[:max_len] + "..."
 
 
 def _is_binary_file(filepath: Path) -> bool:
@@ -146,7 +140,12 @@ def scan_text(
     Args:
         text: The full text to scan.
         filename: Logical filename for reporting.
-        line_offset: Added to every reported line number.
+        line_offset: A 0-based offset added to the 1-based line index when
+            computing the reported line number (``line_number = idx + line_offset``
+            where ``idx`` starts at 1).  The default of 0 means the first line
+            of *text* is reported as line 1.  To report absolute line numbers
+            when *text* is a slice starting at line N of a larger file, pass
+            ``line_offset=N-1`` so that the first scanned line is reported as N.
 
     Returns:
         List of Finding objects (one per pattern match per line).
@@ -192,7 +191,7 @@ def scan_text(
                 file=filename,
                 line=line_number,
                 rule_id=pattern.id,
-                secret=_truncate(secret_text),
+                secret=truncate_secret(secret_text),
                 fingerprint=f"{filename}:{pattern.id}:{line_number}",
                 entropy=ent,
                 severity=pattern.severity,

@@ -11,7 +11,7 @@ from typing import List, Optional
 
 # Re-export from models.py so existing imports of Finding/ScannerError/GitleaksNotFound
 # from .scanner continue to work without modification.
-from .models import Finding, GitleaksNotFound, ScannerError  # noqa: F401
+from .models import Finding, GitleaksNotFound, ScannerError, truncate_secret  # noqa: F401
 
 
 @functools.lru_cache(maxsize=None)
@@ -83,7 +83,7 @@ def _scan_with_gitleaks(
                 file=item.get("File", ""),
                 line=item.get("StartLine", 0),
                 rule_id=item.get("RuleID", "unknown"),
-                secret=_truncate_secret(item.get("Secret", "")),
+                secret=truncate_secret(item.get("Secret", "")),
                 fingerprint=item.get("Fingerprint", ""),
                 entropy=item.get("Entropy", 0.0),
                 commit=item.get("Commit"),
