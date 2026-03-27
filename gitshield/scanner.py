@@ -1,6 +1,8 @@
 """Secret detection — native engine + optional gitleaks fallback."""
 
+import functools
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -9,11 +11,16 @@ from typing import List, Optional
 
 # Re-export from models.py so existing imports of Finding/ScannerError/GitleaksNotFound
 # from .scanner continue to work without modification.
-from .models import Finding, GitleaksNotFound, ScannerError  # noqa: F401
+from .models import Finding, GitleaksNotFound, ScannerError, truncate_secret  # noqa: F401
 
 
+@functools.lru_cache(maxsize=None)
 def _has_gitleaks() -> Optional[str]:
-    """Return gitleaks binary path if installed, else None."""
+    """Return gitleaks binary path if installed, else None.
+
+    Cached for the process lifetime — the binary won't appear or disappear
+    during a single run, and this is called on every hook invocation.
+    """
     return shutil.which("gitleaks")
 
 
@@ -33,6 +40,8 @@ def _scan_with_gitleaks(
 
     tmp_dir = tempfile.mkdtemp()
     report_path = str(Path(tmp_dir) / "report.json")
+    # Restrict report file permissions on multi-user systems.
+    os.chmod(tmp_dir, 0o700)
 
     try:
         cmd = [gitleaks]
@@ -51,12 +60,14 @@ def _scan_with_gitleaks(
             "--exit-code", "0",
         ])
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
         if result.stderr and "error" in result.stderr.lower():
             raise ScannerError(f"Gitleaks error: {result.stderr.strip()}")
 
         report_file = Path(report_path)
+        if report_file.exists():
+            os.chmod(report_path, 0o600)
         if not report_file.exists() or report_file.stat().st_size == 0:
             return []
 
@@ -72,7 +83,7 @@ def _scan_with_gitleaks(
                 file=item.get("File", ""),
                 line=item.get("StartLine", 0),
                 rule_id=item.get("RuleID", "unknown"),
-                secret=_truncate_secret(item.get("Secret", "")),
+                secret=truncate_secret(item.get("Secret", "")),
                 fingerprint=item.get("Fingerprint", ""),
                 entropy=item.get("Entropy", 0.0),
                 commit=item.get("Commit"),
@@ -81,6 +92,8 @@ def _scan_with_gitleaks(
 
         return findings
 
+    except subprocess.TimeoutExpired:
+        return []
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -89,11 +102,21 @@ def scan_path(
     path: str,
     staged_only: bool = False,
     no_git: bool = False,
+    config_threshold: Optional[float] = None,
+    extra_patterns: Optional[List] = None,
+    scan_tests: bool = True,
 ) -> List[Finding]:
     """Scan a path for secrets using native engine + optional gitleaks.
 
     The native engine always runs. If gitleaks is installed, both engines
     run and results are merged (deduplicated by fingerprint).
+
+    Args:
+        path: File or directory path to scan.
+        staged_only: Scan only git-staged files.
+        no_git: Ignore git entirely.
+        config_threshold: Entropy threshold override for patterns without one.
+        extra_patterns: Additional Pattern objects beyond the built-in list.
     """
     resolved = Path(path).resolve()
     if not resolved.exists():
@@ -104,12 +127,19 @@ def scan_path(
 
     # Always run native engine
     if resolved.is_file():
-        native_findings = scan_file(resolved)
+        native_findings = scan_file(
+            resolved,
+            config_threshold=config_threshold,
+            extra_patterns=extra_patterns,
+        )
     else:
         native_findings = scan_directory(
             resolved,
             staged_only=staged_only,
             no_git=no_git,
+            config_threshold=config_threshold,
+            extra_patterns=extra_patterns,
+            scan_tests=scan_tests,
         )
 
     # Try gitleaks as supplement (not required)

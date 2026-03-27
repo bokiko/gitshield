@@ -92,13 +92,13 @@ def uninstall_hook() -> None:
             group["hooks"] = remaining
             filtered.append(group)
 
-    settings["hooks"]["PreToolUse"] = filtered
+    settings.setdefault("hooks", {})["PreToolUse"] = filtered
 
     # Clean up empty structures
-    if not settings["hooks"]["PreToolUse"]:
-        del settings["hooks"]["PreToolUse"]
-    if not settings["hooks"]:
-        del settings["hooks"]
+    if not settings.get("hooks", {}).get("PreToolUse"):
+        settings.get("hooks", {}).pop("PreToolUse", None)
+    if not settings.get("hooks"):
+        settings.pop("hooks", None)
 
     _save_settings(settings)
     click.echo(colorize("GitShield hook removed from Claude Code.", Colors.GREEN))

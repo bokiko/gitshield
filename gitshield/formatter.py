@@ -1,12 +1,13 @@
 """Pretty terminal output for scan results."""
 
+import functools
 import json
 import shlex
 import sys
 from typing import List
 
 from . import __version__
-from .scanner import Finding
+from .models import Finding
 
 
 # ANSI colors
@@ -21,8 +22,13 @@ class Colors:
     RESET = "\033[0m"
 
 
+@functools.lru_cache(maxsize=None)
 def supports_color() -> bool:
-    """Check if terminal supports color."""
+    """Check if terminal supports color.
+
+    Cached for the process lifetime — stdout's tty status never changes
+    during a run, and colorize() calls this on every formatted line.
+    """
     return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
 
 

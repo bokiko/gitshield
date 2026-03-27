@@ -143,6 +143,10 @@ def clone_and_scan(repo: RepoInfo, skip_recent: bool = True) -> List[Finding]:
     if skip_recent and was_scanned_recently(repo.url):
         return []
 
+    # Validate clone URL to prevent injection via spoofed API responses.
+    if not repo.clone_url.startswith("https://github.com/"):
+        raise GitHubError(f"Invalid clone URL: {repo.clone_url!r}")
+
     # Create temp directory for clone; resolve to handle /tmp -> /private/tmp on macOS.
     temp_dir = str(Path(tempfile.mkdtemp(prefix="gitshield_")).resolve())
 
@@ -173,7 +177,7 @@ def clone_and_scan(repo: RepoInfo, skip_recent: bool = True) -> List[Finding]:
 
     except subprocess.TimeoutExpired:
         return []
-    except Exception:
+    except (OSError, ValueError):
         return []
     finally:
         # Clean up

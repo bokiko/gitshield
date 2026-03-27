@@ -6,11 +6,12 @@ detection. Operates on text, files, and directory trees.
 
 import fnmatch
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import List, Optional, Set, Union
 
-from .models import Finding
+from .models import Finding, truncate_secret
 from .patterns import entropy, PATTERNS
 
 # Directories to always skip during tree walks.
@@ -40,16 +41,17 @@ _IGNORE_MARKERS = (
     "-- gitshield:ignore",
 )
 
+# ReDoS mitigations: cap gitignore pattern count and length.
+_MAX_GITIGNORE_PATTERNS: int = 500
+_MAX_GITIGNORE_PATTERN_LEN: int = 200
+
+# Test file patterns -- skipped when scan_tests=False.
+_TEST_FILE_PATTERNS = ("test_*.py", "*_test.py")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _truncate(text: str, max_len: int = 20) -> str:
-    """Truncate secret for safe display."""
-    if len(text) <= max_len:
-        return text
-    return text[:max_len] + "..."
 
 
 def _is_binary_file(filepath: Path) -> bool:
@@ -64,8 +66,8 @@ def _is_binary_file(filepath: Path) -> bool:
 
 def _should_skip_path(path: Path) -> bool:
     """Return True if *path* should be skipped based on directory name or extension."""
-    # Check each component for skip-listed directory names.
-    for part in path.parts:
+    # Check only directory components for skip-listed directory names (not filename).
+    for part in path.parent.parts:
         if part in _SKIP_DIRS:
             return True
     # Check binary extensions.
@@ -85,25 +87,39 @@ def _parse_gitignore(root: Path) -> List[str]:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
+            # Skip pathologically long patterns that could cause ReDoS.
+            if len(line) > _MAX_GITIGNORE_PATTERN_LEN:
+                continue
             patterns.append(line)
     except OSError:
         pass
-    return patterns
+    return patterns[:_MAX_GITIGNORE_PATTERNS]
 
 
-def _matches_gitignore(rel_path: str, ignore_patterns: List[str]) -> bool:
-    """Return True if *rel_path* matches any gitignore pattern."""
-    for pattern in ignore_patterns:
-        # Directory-only pattern (trailing slash): match against path components.
+def _compile_gitignore_patterns(patterns: List[str]) -> List[tuple]:
+    """Pre-compile gitignore patterns into (is_dir, compiled_regex) tuples."""
+    compiled = []
+    for pattern in patterns:
         if pattern.endswith("/"):
             dir_pattern = pattern.rstrip("/")
-            if any(fnmatch.fnmatch(part, dir_pattern) for part in Path(rel_path).parts):
+            compiled.append((True, re.compile(fnmatch.translate(dir_pattern))))
+        else:
+            compiled.append((False, re.compile(fnmatch.translate(pattern))))
+    return compiled
+
+
+def _matches_gitignore(rel_path: str, ignore_patterns: List[tuple]) -> bool:
+    """Return True if *rel_path* matches any pre-compiled gitignore pattern."""
+    for is_dir, compiled_re in ignore_patterns:
+        if is_dir:
+            # Directory-only pattern: match against path components.
+            if any(compiled_re.fullmatch(part) for part in Path(rel_path).parts):
                 return True
         else:
             # Match against full relative path and also the basename.
-            if fnmatch.fnmatch(rel_path, pattern):
+            if compiled_re.fullmatch(rel_path):
                 return True
-            if fnmatch.fnmatch(Path(rel_path).name, pattern):
+            if compiled_re.fullmatch(Path(rel_path).name):
                 return True
     return False
 
@@ -117,39 +133,53 @@ def scan_text(
     filename: str = "<stdin>",
     line_offset: int = 0,
     config_threshold: Optional[float] = None,
+    extra_patterns: Optional[List] = None,
 ) -> List[Finding]:
     """Scan a text string line-by-line against all patterns.
 
     Args:
         text: The full text to scan.
         filename: Logical filename for reporting.
-        line_offset: Added to every reported line number.
+        line_offset: A 0-based offset added to the 1-based line index when
+            computing the reported line number (``line_number = idx + line_offset``
+            where ``idx`` starts at 1).  The default of 0 means the first line
+            of *text* is reported as line 1.  To report absolute line numbers
+            when *text* is a slice starting at line N of a larger file, pass
+            ``line_offset=N-1`` so that the first scanned line is reported as N.
 
     Returns:
         List of Finding objects (one per pattern match per line).
     """
     findings: List[Finding] = []
     lines = text.splitlines()
+    all_patterns = list(PATTERNS) + list(extra_patterns or [])
 
     for idx, line in enumerate(lines, start=1):
         # Honour inline ignore directives.
         if any(marker in line for marker in _IGNORE_MARKERS):
             continue
 
-        for pattern in PATTERNS:
+        for pattern in all_patterns:
             match = pattern.regex.search(line)
             if match is None:
                 continue
 
             matched_text = match.group(0)
+            # Use the first capturing group for entropy/display when available.
+            # This avoids prefix inflation (e.g. 'api_key = ' before the value).
+            secret_text = (
+                match.group(1)
+                if match.lastindex and match.lastindex >= 1
+                else matched_text
+            )
 
             # If the pattern specifies an entropy threshold, enforce it.
             if pattern.entropy_threshold is not None:
-                ent = entropy(matched_text)
+                ent = entropy(secret_text)
                 if ent < pattern.entropy_threshold:
                     continue
             elif config_threshold is not None:
-                ent = entropy(matched_text)
+                ent = entropy(secret_text)
                 if ent < config_threshold:
                     continue
             else:
@@ -161,7 +191,7 @@ def scan_text(
                 file=filename,
                 line=line_number,
                 rule_id=pattern.id,
-                secret=_truncate(matched_text),
+                secret=truncate_secret(secret_text),
                 fingerprint=f"{filename}:{pattern.id}:{line_number}",
                 entropy=ent,
                 severity=pattern.severity,
@@ -170,7 +200,11 @@ def scan_text(
     return findings
 
 
-def scan_file(filepath: Union[str, Path]) -> List[Finding]:
+def scan_file(
+    filepath: Union[str, Path],
+    config_threshold: Optional[float] = None,
+    extra_patterns: Optional[List] = None,
+) -> List[Finding]:
     """Scan a single file for secrets.
 
     Binary files (null bytes in the first 8 KB) are silently skipped.
@@ -178,6 +212,8 @@ def scan_file(filepath: Union[str, Path]) -> List[Finding]:
 
     Args:
         filepath: Path to the file to scan.
+        config_threshold: Entropy threshold override for patterns without one.
+        extra_patterns: Additional Pattern objects beyond the built-in list.
 
     Returns:
         List of Finding objects.
@@ -187,15 +223,35 @@ def scan_file(filepath: Union[str, Path]) -> List[Finding]:
     if not filepath.is_file():
         return []
 
-    if _is_binary_file(filepath):
-        return []
-
+    # Single-read: check for binary (null bytes in first 8 KB) and decode in one pass.
     try:
-        text = filepath.read_text(encoding="utf-8", errors="replace")
+        with open(filepath, "rb") as fh:
+            raw = fh.read()
     except (OSError, IOError):
         return []
 
-    return scan_text(text, filename=str(filepath))
+    if b"\x00" in raw[:8192]:
+        return []
+
+    try:
+        text = raw.decode("utf-8", errors="replace")
+    except (UnicodeDecodeError, ValueError):
+        return []
+
+    return scan_text(
+        text,
+        filename=str(filepath),
+        config_threshold=config_threshold,
+        extra_patterns=extra_patterns,
+    )
+
+
+def _is_test_file(filename: str) -> bool:
+    """Return True if *filename* matches a test file pattern."""
+    for pattern in _TEST_FILE_PATTERNS:
+        if fnmatch.fnmatch(filename, pattern):
+            return True
+    return False
 
 
 def scan_directory(
@@ -203,6 +259,9 @@ def scan_directory(
     staged_only: bool = False,
     no_git: bool = False,
     respect_gitignore: bool = True,
+    config_threshold: Optional[float] = None,
+    extra_patterns: Optional[List] = None,
+    scan_tests: bool = True,
 ) -> List[Finding]:
     """Walk a directory tree and scan every eligible file.
 
@@ -211,6 +270,9 @@ def scan_directory(
         staged_only: If True, only scan files staged in git (``git diff --cached``).
         no_git: If True, ignore git entirely (no gitignore, no staged filter).
         respect_gitignore: Honour ``.gitignore`` patterns (unless *no_git*).
+        config_threshold: Entropy threshold override for patterns without one.
+        extra_patterns: Additional Pattern objects beyond the built-in list.
+        scan_tests: If False, skip test files (test_*.py, *_test.py).
 
     Returns:
         Aggregated list of Finding objects.
@@ -224,9 +286,10 @@ def scan_directory(
         return _scan_staged(root)
 
     # ---- full tree walk ----
-    ignore_patterns: List[str] = []
+    ignore_patterns: List[tuple] = []
     if respect_gitignore and not no_git:
-        ignore_patterns = _parse_gitignore(root)
+        raw_patterns = _parse_gitignore(root)
+        ignore_patterns = _compile_gitignore_patterns(raw_patterns)
 
     findings: List[Finding] = []
 
@@ -240,6 +303,10 @@ def scan_directory(
             if _should_skip_path(file_path):
                 continue
 
+            # Skip test files when scan_tests is disabled.
+            if not scan_tests and _is_test_file(filename):
+                continue
+
             # Gitignore filtering.
             if ignore_patterns:
                 try:
@@ -249,7 +316,13 @@ def scan_directory(
                 if _matches_gitignore(rel, ignore_patterns):
                     continue
 
-            findings.extend(scan_file(file_path))
+            findings.extend(
+                scan_file(
+                    file_path,
+                    config_threshold=config_threshold,
+                    extra_patterns=extra_patterns,
+                )
+            )
 
     return findings
 
@@ -258,6 +331,7 @@ def scan_content(
     content: str,
     context: str = "content",
     config_threshold: Optional[float] = None,
+    extra_patterns: Optional[List] = None,
 ) -> List[Finding]:
     """Quick scan of arbitrary content (convenience wrapper for hooks).
 
@@ -267,11 +341,17 @@ def scan_content(
         content: The text to scan.
         context: Label used as the ``file`` field in findings.
         config_threshold: Entropy threshold override for patterns without a threshold.
+        extra_patterns: Additional Pattern objects beyond the built-in list.
 
     Returns:
         List of Finding objects.
     """
-    return scan_text(content, filename=context, config_threshold=config_threshold)
+    return scan_text(
+        content,
+        filename=context,
+        config_threshold=config_threshold,
+        extra_patterns=extra_patterns,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +366,10 @@ def _scan_staged(root: Path) -> List[Finding]:
             capture_output=True,
             text=True,
             cwd=str(root),
+            timeout=30,
         )
+    except subprocess.TimeoutExpired:
+        return []
     except (OSError, FileNotFoundError):
         return []
 

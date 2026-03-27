@@ -21,6 +21,20 @@ class Finding:
     severity: str = "medium"
 
 
+def truncate_secret(secret: str, max_len: int = 20) -> str:
+    """Truncate a secret value for safe display, keeping both start and end.
+
+    For long secrets this produces ``start...end`` which is more useful for
+    identification than a start-only truncation (both engines now use the same
+    format regardless of whether the finding came from the native engine or
+    gitleaks).
+    """
+    if len(secret) <= max_len:
+        return secret
+    keep = (max_len - 3) // 2
+    return f"{secret[:keep]}...{secret[-keep:]}"
+
+
 class ScannerError(Exception):
     """Scanner-related errors."""
     pass

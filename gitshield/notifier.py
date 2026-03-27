@@ -6,7 +6,7 @@ from typing import List, Optional, Set
 import requests
 
 from .config import get_github_token
-from .scanner import Finding
+from .models import Finding
 from .monitor import RepoInfo
 from .db import was_notified, mark_notified, get_notified_fingerprints
 
@@ -125,21 +125,17 @@ def create_github_issue(
     if not token:
         raise NotifierError("GITHUB_TOKEN not set")
 
-    # Build findings table
-    findings_table = "\n".join([
-        f"| `{f.file}` | {f.line} | {f.rule_id} |"
-        for f in findings
-    ])
-
     title = "[Security] Potential secrets exposed in repository"
+
+    # Build rule type summary (no file paths or line numbers to avoid leaking metadata)
+    rule_types = sorted(set(f.rule_id for f in findings))
+    rule_summary = ", ".join(rule_types)
 
     body = f"""## GitShield Security Alert
 
-Potential secrets were detected in this repository:
+Potential secrets were detected in this repository ({len(findings)} finding(s), types: {rule_summary}).
 
-| File | Line | Type |
-|------|------|------|
-{findings_table}
+Run `gitshield scan` locally for full details including file paths and line numbers.
 
 ### Recommended actions
 

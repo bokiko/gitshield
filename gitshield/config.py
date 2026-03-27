@@ -8,12 +8,14 @@ Supports two config formats:
 from __future__ import annotations
 
 import fnmatch
+import functools
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from .scanner import Finding
+from .models import Finding
+from .patterns import Pattern
 
 # ---------------------------------------------------------------------------
 # TOML parser import -- gracefully degrade when unavailable
@@ -205,14 +207,22 @@ def create_default_config(path: Path, force: bool = False) -> Path:
 # ---------------------------------------------------------------------------
 # Filtering
 # ---------------------------------------------------------------------------
+@functools.lru_cache(maxsize=512)
+def _compile_glob(pattern: str):
+    """Compile a glob pattern to a regex (cached)."""
+    import re
+    return re.compile(fnmatch.translate(pattern))
+
+
 def _matches_any_glob(filepath: str, patterns: List[str]) -> bool:
     """Check if *filepath* matches any of the given glob patterns."""
     for pattern in patterns:
+        compiled = _compile_glob(pattern)
         # Match against the full relative path
-        if fnmatch.fnmatch(filepath, pattern):
+        if compiled.fullmatch(filepath):
             return True
         # Also match against just the filename
-        if fnmatch.fnmatch(Path(filepath).name, pattern):
+        if compiled.fullmatch(Path(filepath).name):
             return True
     return False
 
@@ -254,6 +264,52 @@ def filter_findings(
         filtered.append(f)
 
     return filtered
+
+
+# ---------------------------------------------------------------------------
+# Custom pattern builder
+# ---------------------------------------------------------------------------
+
+def build_custom_patterns(config: "GitShieldConfig") -> List[Pattern]:
+    """Convert config.custom_patterns dicts into Pattern objects.
+
+    Skips entries with invalid severity or un-compilable regex (logs to stderr).
+    Returns an empty list when config has no custom patterns.
+    """
+    import re
+    import sys
+
+    built: List[Pattern] = []
+    for raw in config.custom_patterns:
+        pattern_id = str(raw.get("name", "custom-pattern"))
+        regex_str = str(raw.get("regex", ""))
+        description = str(raw.get("description", ""))
+        severity = str(raw.get("severity", "medium"))
+        entropy_threshold = raw.get("entropy_threshold")
+
+        if not regex_str:
+            print(f"gitshield: custom pattern '{pattern_id}' has no regex, skipping", file=sys.stderr)
+            continue
+
+        try:
+            compiled = re.compile(regex_str)
+        except re.error as exc:
+            print(f"gitshield: custom pattern '{pattern_id}' has invalid regex: {exc}", file=sys.stderr)
+            continue
+
+        try:
+            built.append(Pattern(
+                id=pattern_id,
+                name=pattern_id,
+                regex=compiled,
+                description=description,
+                severity=severity,
+                entropy_threshold=float(entropy_threshold) if entropy_threshold is not None else None,
+            ))
+        except ValueError as exc:
+            print(f"gitshield: custom pattern '{pattern_id}' error: {exc}", file=sys.stderr)
+
+    return built
 
 
 # ---------------------------------------------------------------------------
