@@ -2,6 +2,7 @@
 
 import json
 import sys
+from pathlib import Path
 from typing import List
 
 from .config import build_custom_patterns, load_config
@@ -29,16 +30,25 @@ SENSITIVE_PATHS = [
     ".key",
     ".p12",
     ".pfx",
+    ".htpasswd",
+    "id_rsa",
+    "id_ed25519",
+    "id_ecdsa",
+    ".netrc",
+    ".pgpass",
+    ".npmrc",
+    ".pypirc",
 ]
 
 
 def _is_allowed_path(filepath: str) -> bool:
-    """Check if filepath is in the allowlist (example env files only)."""
-    lower = filepath.lower()
-    for pattern in ALLOWED_PATHS:
-        if lower.endswith(pattern):
-            return True
-    return False
+    """Check if filepath is in the allowlist (example env files only).
+
+    Matches only the basename to prevent bypass via paths like
+    '/app/secrets/malicious.env.example'.
+    """
+    basename = Path(filepath).name.lower()
+    return basename in ALLOWED_PATHS
 
 
 def _is_sensitive_path(filepath: str) -> bool:
@@ -81,7 +91,6 @@ def handle_hook(input_data: dict) -> dict:
 
     # Load config for custom patterns and entropy threshold.
     try:
-        from pathlib import Path
         config = load_config(Path("."))
         custom = build_custom_patterns(config) or None
         threshold = config.entropy_threshold
@@ -90,9 +99,9 @@ def handle_hook(input_data: dict) -> dict:
         custom = None
         threshold = None
 
-    # Handle Write / Edit tools
-    if tool_name in ("Write", "Edit"):
-        filepath = str(tool_input.get("file_path", tool_input.get("path", "")))
+    # Handle Write / Edit / NotebookEdit tools
+    if tool_name in ("Write", "Edit", "NotebookEdit"):
+        filepath = str(tool_input.get("file_path", tool_input.get("notebook_path", tool_input.get("path", ""))))
 
         # Skip allowed paths
         if _is_allowed_path(filepath):
@@ -102,6 +111,8 @@ def handle_hook(input_data: dict) -> dict:
         content = str(tool_input.get("content", ""))
         if not content:
             content = str(tool_input.get("new_string", ""))
+        if not content:
+            content = str(tool_input.get("cell_source", ""))
 
         if not content:
             return {"result": "approve"}
@@ -117,8 +128,8 @@ def handle_hook(input_data: dict) -> dict:
                     "result": "block",
                     "reason": _format_block_reason(findings, filepath),
                 }
-            # Non-sensitive path: block on critical/high, warn on medium/low
-            critical = [f for f in findings if f.severity in ("critical", "high")]
+            # Non-sensitive path: block on critical/high/medium
+            critical = [f for f in findings if f.severity in ("critical", "high", "medium")]
             if critical:
                 return {
                     "result": "block",
@@ -139,7 +150,7 @@ def handle_hook(input_data: dict) -> dict:
         )
 
         if findings:
-            critical = [f for f in findings if f.severity in ("critical", "high")]
+            critical = [f for f in findings if f.severity in ("critical", "high", "medium")]
             if critical:
                 return {
                     "result": "block",

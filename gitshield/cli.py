@@ -1,5 +1,6 @@
 """GitShield CLI — Prevent accidental secret commits."""
 
+import dataclasses
 import re
 import sys
 from pathlib import Path
@@ -9,7 +10,8 @@ import click
 from . import __version__
 from .config import build_custom_patterns, filter_findings, load_config, load_ignore_list, find_git_root
 from .formatter import print_findings, print_json, print_blocked_message, colorize, Colors
-from .scanner import scan_path, ScannerError
+from .models import ScannerError
+from .scanner import scan_path
 
 
 @click.group()
@@ -49,7 +51,16 @@ def scan(path: str, staged: bool, no_git: bool, as_json: bool, sarif: bool, quie
         # Output
         if sarif:
             from .formatter import print_sarif
-            print_sarif(findings)
+            # SARIF requires relative URIs so GitHub Code Scanning can map findings.
+            scan_root = Path(path).resolve()
+            sarif_findings = []
+            for f in findings:
+                try:
+                    rel = str(Path(f.file).relative_to(scan_root))
+                except ValueError:
+                    rel = f.file
+                sarif_findings.append(dataclasses.replace(f, file=rel))
+            print_sarif(sarif_findings)
         elif as_json:
             print_json(findings)
         else:

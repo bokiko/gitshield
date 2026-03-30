@@ -57,16 +57,6 @@ _TEST_FILE_PATTERNS = ("test_*.py", "*_test.py")
 # ---------------------------------------------------------------------------
 
 
-def _is_binary_file(filepath: Path) -> bool:
-    """Return True if *filepath* looks like a binary file (null byte in first 8 KB)."""
-    try:
-        with open(filepath, "rb") as fh:
-            chunk = fh.read(8192)
-        return b"\x00" in chunk
-    except (OSError, IOError):
-        return True  # unreadable — treat as binary
-
-
 def _should_skip_path(path: Path) -> bool:
     """Return True if *path* should be skipped based on directory name or extension."""
     # Check only directory components for skip-listed directory names (not filename).
@@ -113,16 +103,19 @@ def _compile_gitignore_patterns(patterns: List[str]) -> List[tuple]:
 
 def _matches_gitignore(rel_path: str, ignore_patterns: List[tuple]) -> bool:
     """Return True if *rel_path* matches any pre-compiled gitignore pattern."""
+    path_obj = Path(rel_path)
+    parts = path_obj.parts
+    name = path_obj.name
     for is_dir, compiled_re in ignore_patterns:
         if is_dir:
             # Directory-only pattern: match against path components.
-            if any(compiled_re.fullmatch(part) for part in Path(rel_path).parts):
+            if any(compiled_re.fullmatch(part) for part in parts):
                 return True
         else:
             # Match against full relative path and also the basename.
             if compiled_re.fullmatch(rel_path):
                 return True
-            if compiled_re.fullmatch(Path(rel_path).name):
+            if compiled_re.fullmatch(name):
                 return True
     return False
 
@@ -155,7 +148,7 @@ def scan_text(
     """
     findings: List[Finding] = []
     lines = text.splitlines()
-    all_patterns = list(PATTERNS) + list(extra_patterns or [])
+    all_patterns = PATTERNS if not extra_patterns else list(PATTERNS) + list(extra_patterns)
 
     for idx, line in enumerate(lines, start=1):
         # Honour inline ignore directives.
@@ -297,7 +290,12 @@ def scan_directory(
 
     # ---- staged-only mode: delegate to git for the file list ----
     if staged_only:
-        return _scan_staged(root)
+        return _scan_staged(
+            root,
+            config_threshold=config_threshold,
+            extra_patterns=extra_patterns,
+            scan_tests=scan_tests,
+        )
 
     # ---- full tree walk ----
     ignore_patterns: List[tuple] = []
@@ -372,7 +370,12 @@ def scan_content(
 # Internal: staged-file scanning
 # ---------------------------------------------------------------------------
 
-def _scan_staged(root: Path) -> List[Finding]:
+def _scan_staged(
+    root: Path,
+    config_threshold: Optional[float] = None,
+    extra_patterns: Optional[List] = None,
+    scan_tests: bool = True,
+) -> List[Finding]:
     """Scan only files staged in git inside *root*."""
     try:
         result = subprocess.run(
@@ -400,6 +403,14 @@ def _scan_staged(root: Path) -> List[Finding]:
             continue
         if _should_skip_path(file_path):
             continue
-        findings.extend(scan_file(file_path))
+        if not scan_tests and _is_test_file(file_path.name):
+            continue
+        findings.extend(
+            scan_file(
+                file_path,
+                config_threshold=config_threshold,
+                extra_patterns=extra_patterns,
+            )
+        )
 
     return findings

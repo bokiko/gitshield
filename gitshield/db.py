@@ -116,6 +116,25 @@ def mark_notified(
     conn.commit()
 
 
+def mark_notified_batch(
+    repo_url: str,
+    fingerprints: List[str],
+    email: Optional[str] = None,
+    method: str = "email",
+) -> None:
+    """Record that we notified about multiple findings in a single transaction."""
+    if not fingerprints:
+        return
+    conn = get_connection()
+    now = datetime.now().isoformat()
+    conn.executemany("""
+        INSERT OR IGNORE INTO notifications
+        (repo_url, email, fingerprint, notified_at, method)
+        VALUES (?, ?, ?, ?, ?)
+    """, [(repo_url, email, fp, now, method) for fp in fingerprints])
+    conn.commit()
+
+
 def get_notified_fingerprints(repo_url: str, fingerprints: List[str]) -> Set[str]:
     """Return the subset of *fingerprints* that have already been notified."""
     if not fingerprints:

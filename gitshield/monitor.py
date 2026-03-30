@@ -15,7 +15,8 @@ except ImportError:
 
 from .config import get_github_token
 from .db import was_scanned_recently, mark_scanned
-from .scanner import scan_path, Finding
+from .models import Finding
+from .scanner import scan_path
 
 # Valid GitHub owner/name characters.
 _VALID_GH_NAME = re.compile(r'^[A-Za-z0-9._-]+$')
