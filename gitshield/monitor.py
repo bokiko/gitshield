@@ -189,8 +189,11 @@ def clone_and_scan(repo: RepoInfo, skip_recent: bool = True) -> List[Finding]:
 
         # Enrich findings with repo info
         for f in findings:
-            # Make paths relative to repo root
-            f.file = str(Path(f.file).relative_to(temp_dir))
+            # Make paths relative to repo root; keep absolute if relativization fails.
+            try:
+                f.file = str(Path(f.file).relative_to(temp_dir))
+            except ValueError:
+                pass  # keep absolute path rather than discarding the finding
 
         mark_scanned(repo.url, len(findings))
         return findings

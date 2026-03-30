@@ -5,6 +5,7 @@ detection. Operates on text, files, and directory trees.
 """
 
 import fnmatch
+import itertools
 import os
 import re
 import subprocess
@@ -148,7 +149,7 @@ def scan_text(
     """
     findings: List[Finding] = []
     lines = text.splitlines()
-    all_patterns = PATTERNS if not extra_patterns else list(PATTERNS) + list(extra_patterns)
+    all_patterns = PATTERNS if not extra_patterns else itertools.chain(PATTERNS, extra_patterns)
 
     for idx, line in enumerate(lines, start=1):
         # Honour inline ignore directives.

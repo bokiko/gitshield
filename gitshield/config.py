@@ -122,7 +122,7 @@ def load_ignore_list(path: Path) -> Set[str]:
         return set()
 
     ignores = set()
-    with open(ignore_file) as f:
+    with open(ignore_file, encoding="utf-8", errors="replace") as f:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#"):
@@ -367,7 +367,7 @@ def create_ignore_file(path: Path, findings: List[Finding]) -> Path:
         lines.append(f.fingerprint)
         lines.append("")
 
-    with open(ignore_file, "w") as file:
+    with open(ignore_file, "w", encoding="utf-8") as file:
         file.write("\n".join(lines))
 
     return ignore_file

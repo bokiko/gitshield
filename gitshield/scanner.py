@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .models import Finding, GitleaksNotFound, ScannerError, truncate_secret
-from .engine import scan_directory, scan_file  # noqa: F401
+from .engine import scan_directory, scan_file, _is_test_file  # noqa: F401
 
 
 @functools.lru_cache(maxsize=None)
@@ -123,6 +123,9 @@ def scan_path(
 
     # Always run native engine
     if resolved.is_file():
+        # Respect scan_tests flag for single-file scans (consistent with scan_directory).
+        if not scan_tests and _is_test_file(resolved.name):
+            return []
         native_findings = scan_file(
             resolved,
             config_threshold=config_threshold,

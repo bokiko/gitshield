@@ -2,6 +2,7 @@
 
 import atexit
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Set
@@ -12,6 +13,7 @@ DB_PATH = DB_DIR / "gitshield.db"
 
 # Module-level singleton connection — initialized on first use.
 _conn: Optional[sqlite3.Connection] = None
+_lock = threading.Lock()
 
 
 def _close_connection() -> None:
@@ -29,10 +31,12 @@ def get_connection() -> sqlite3.Connection:
     """Return the module-level DB connection, creating it on first call."""
     global _conn
     if _conn is None:
-        DB_DIR.mkdir(parents=True, exist_ok=True)
-        _conn = sqlite3.connect(DB_PATH)
-        _conn.row_factory = sqlite3.Row
-        _init_tables(_conn)
+        with _lock:
+            if _conn is None:
+                DB_DIR.mkdir(parents=True, exist_ok=True)
+                _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+                _conn.row_factory = sqlite3.Row
+                _init_tables(_conn)
     return _conn
 
 
