@@ -590,9 +590,9 @@ _AI_PATTERNS: List[Pattern] = [
         id="cohere-api-key",
         name="Cohere API Key",
         regex=re.compile(
-            r"[A-Za-z0-9]{40}"
+            r"(?i)(?:cohere[_\-]?api[_\-]?key|COHERE_API_KEY)\s*[:=]\s*['\"]?([A-Za-z0-9]{40})['\"]?"
         ),
-        description="Cohere API key (40-char alphanumeric with co- context)",
+        description="Cohere API key (contextual keyword + 40-char alphanumeric)",
         severity="medium",
         entropy_threshold=4.5,
     ),

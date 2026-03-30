@@ -2,6 +2,7 @@
 
 import json
 import sys
+from pathlib import Path
 from typing import List
 
 from .config import build_custom_patterns, load_config
@@ -33,12 +34,13 @@ SENSITIVE_PATHS = [
 
 
 def _is_allowed_path(filepath: str) -> bool:
-    """Check if filepath is in the allowlist (example env files only)."""
-    lower = filepath.lower()
-    for pattern in ALLOWED_PATHS:
-        if lower.endswith(pattern):
-            return True
-    return False
+    """Check if filepath is in the allowlist (example env files only).
+
+    Matches only the basename to prevent bypass via paths like
+    '/app/secrets/malicious.env.example'.
+    """
+    basename = Path(filepath).name.lower()
+    return basename in ALLOWED_PATHS
 
 
 def _is_sensitive_path(filepath: str) -> bool:
@@ -81,7 +83,6 @@ def handle_hook(input_data: dict) -> dict:
 
     # Load config for custom patterns and entropy threshold.
     try:
-        from pathlib import Path
         config = load_config(Path("."))
         custom = build_custom_patterns(config) or None
         threshold = config.entropy_threshold

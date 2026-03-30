@@ -57,6 +57,20 @@ class TestWriteToolHook:
         })
         assert result["result"] == "approve"
 
+    def test_handle_hook_blocks_allowlist_bypass_via_suffix(self):
+        """Write to a path like /secrets/malicious.env.example should NOT be allowlisted.
+
+        SEC-001 regression: basename check prevents suffix-based bypass.
+        """
+        result = handle_hook({
+            "tool_name": "Write",
+            "tool_input": {
+                "file_path": "/app/secrets/malicious.env.example",
+                "content": 'AWS_KEY="AKIA1234567890ABCDEF"\n',
+            },
+        })
+        assert result["result"] == "block"
+
     def test_handle_hook_block_sensitive_path(self):
         """Write to .env with any finding should be blocked (sensitive path)."""
         result = handle_hook({
