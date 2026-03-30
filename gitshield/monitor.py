@@ -1,5 +1,6 @@
 """GitHub Events API client for monitoring public repos."""
 
+import re
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -7,11 +8,17 @@ from pathlib import Path
 from typing import List, Optional
 import subprocess
 
-import requests
+try:
+    import requests
+except ImportError:
+    requests = None  # type: ignore[assignment]  # optional dep: pip install gitshield[patrol]
 
 from .config import get_github_token
 from .db import was_scanned_recently, mark_scanned
 from .scanner import scan_path, Finding
+
+# Valid GitHub owner/name characters.
+_VALID_GH_NAME = re.compile(r'^[A-Za-z0-9._-]+$')
 
 
 @dataclass
@@ -23,6 +30,12 @@ class RepoInfo:
     clone_url: str
     author_email: Optional[str] = None
     author_name: Optional[str] = None
+
+    def __post_init__(self):
+        if not _VALID_GH_NAME.match(self.owner):
+            raise ValueError(f"Invalid GitHub owner: {self.owner!r}")
+        if not _VALID_GH_NAME.match(self.name):
+            raise ValueError(f"Invalid GitHub repo name: {self.name!r}")
 
 
 class GitHubError(Exception):
@@ -40,6 +53,9 @@ def fetch_public_events(limit: int = 30) -> List[RepoInfo]:
     Returns:
         List of RepoInfo objects
     """
+    if requests is None:
+        raise GitHubError("requests package required: pip install gitshield[patrol]")
+
     headers = {"Accept": "application/vnd.github.v3+json"}
     token = get_github_token()
     if token:
@@ -105,6 +121,9 @@ def fetch_public_events(limit: int = 30) -> List[RepoInfo]:
 
 def fetch_repo_info(owner: str, name: str) -> RepoInfo:
     """Fetch info for a specific repository."""
+    if requests is None:
+        raise GitHubError("requests package required: pip install gitshield[patrol]")
+
     headers = {"Accept": "application/vnd.github.v3+json"}
     token = get_github_token()
     if token:
@@ -176,8 +195,10 @@ def clone_and_scan(repo: RepoInfo, skip_recent: bool = True) -> List[Finding]:
         return findings
 
     except subprocess.TimeoutExpired:
+        mark_scanned(repo.url, 0)
         return []
     except (OSError, ValueError):
+        mark_scanned(repo.url, 0)
         return []
     finally:
         # Clean up
@@ -186,6 +207,9 @@ def clone_and_scan(repo: RepoInfo, skip_recent: bool = True) -> List[Finding]:
 
 def get_author_email(owner: str, name: str) -> Optional[str]:
     """Get email of the most recent committer."""
+    if requests is None:
+        return None
+
     headers = {"Accept": "application/vnd.github.v3+json"}
     token = get_github_token()
     if token:

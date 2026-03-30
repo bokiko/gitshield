@@ -4,20 +4,20 @@ import json
 import sys
 from typing import List
 
+from .config import build_custom_patterns, load_config
 from .engine import scan_content
 from .models import Finding
 
 
-# Files that should legitimately contain secrets (don't block)
+# Files that should legitimately contain secrets (don't block).
+# NOTE: This is intentionally more restrictive than the scan allowlist.
+# Directory-based entries are excluded because the filepath comes from
+# untrusted AI model input — a model could write secrets to a path like
+# "fixtures/leaked.py" to bypass scanning.
 ALLOWED_PATHS = [
     ".env.example",
     ".env.template",
     ".env.sample",
-    "*.test.*",
-    "*.spec.*",
-    "fixtures/",
-    "__fixtures__/",
-    "testdata/",
 ]
 
 # Sensitive file paths (always block if secrets detected)
@@ -33,22 +33,10 @@ SENSITIVE_PATHS = [
 
 
 def _is_allowed_path(filepath: str) -> bool:
-    """Check if filepath is in the allowlist (test files, examples, etc.)."""
-    import fnmatch
-    from pathlib import Path as _Path
+    """Check if filepath is in the allowlist (example env files only)."""
     lower = filepath.lower()
-    path_parts = _Path(lower).parts
-    dir_parts = _Path(lower).parent.parts
     for pattern in ALLOWED_PATHS:
-        if pattern.endswith("/"):
-            # Directory allowlist: check if any path component exactly matches
-            dir_name = pattern.rstrip("/")
-            if dir_name in dir_parts:
-                return True
-        elif "*" in pattern:
-            if fnmatch.fnmatch(filepath.split("/")[-1], pattern):
-                return True
-        elif lower.endswith(pattern):
+        if lower.endswith(pattern):
             return True
     return False
 
@@ -91,6 +79,17 @@ def handle_hook(input_data: dict) -> dict:
     tool_name = input_data.get("tool_name", "")
     tool_input = input_data.get("tool_input", {})
 
+    # Load config for custom patterns and entropy threshold.
+    try:
+        from pathlib import Path
+        config = load_config(Path("."))
+        custom = build_custom_patterns(config) or None
+        threshold = config.entropy_threshold
+    except Exception:
+        config = None
+        custom = None
+        threshold = None
+
     # Handle Write / Edit tools
     if tool_name in ("Write", "Edit"):
         filepath = str(tool_input.get("file_path", tool_input.get("path", "")))
@@ -107,7 +106,10 @@ def handle_hook(input_data: dict) -> dict:
         if not content:
             return {"result": "approve"}
 
-        findings = scan_content(content, context=filepath or "file")
+        findings = scan_content(
+            content, context=filepath or "file",
+            config_threshold=threshold, extra_patterns=custom,
+        )
 
         if findings:
             if _is_sensitive_path(filepath):
@@ -131,7 +133,10 @@ def handle_hook(input_data: dict) -> dict:
         if not command:
             return {"result": "approve"}
 
-        findings = scan_content(command, context="bash-command")
+        findings = scan_content(
+            command, context="bash-command",
+            config_threshold=threshold, extra_patterns=custom,
+        )
 
         if findings:
             critical = [f for f in findings if f.severity in ("critical", "high")]

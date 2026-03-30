@@ -10,7 +10,7 @@ from .formatter import colorize, Colors
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 HOOK_COMMAND = "gitshield-claude-hook"
 HOOK_MATCHER = "Write|Edit|Bash"
-HOOK_TIMEOUT = 5
+HOOK_TIMEOUT = 10
 
 
 def _load_settings() -> dict:

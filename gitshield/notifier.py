@@ -1,14 +1,17 @@
 """Send notifications via email and GitHub issues."""
 
 import os
-from typing import List, Optional, Set
+from typing import List, Optional
 
-import requests
+try:
+    import requests
+except ImportError:
+    requests = None  # type: ignore[assignment]  # optional dep: pip install gitshield[patrol]
 
 from .config import get_github_token
 from .models import Finding
 from .monitor import RepoInfo
-from .db import was_notified, mark_notified, get_notified_fingerprints
+from .db import mark_notified, get_notified_fingerprints
 
 
 class NotifierError(Exception):
@@ -68,7 +71,7 @@ Recommended actions:
 
 ---
 This is an automated security notification from GitShield.
-https://gitlab.com/bokiko/gitshield
+https://github.com/bokiko/gitshield
 
 To stop receiving these alerts, rotate your credentials and remove them from git history.
 """
@@ -147,7 +150,7 @@ Run `gitshield scan` locally for full details including file paths and line numb
 - [Removing sensitive data from a repository](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)
 
 ---
-*Automated alert from [GitShield](https://gitlab.com/bokiko/gitshield)*
+*Automated alert from [GitShield](https://github.com/bokiko/gitshield)*
 """
 
     if dry_run:

@@ -26,11 +26,21 @@ def main():
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 @click.option("--sarif", is_flag=True, help="Output as SARIF")
 @click.option("--quiet", "-q", is_flag=True, help="Minimal output (for hooks)")
-def scan(path: str, staged: bool, no_git: bool, as_json: bool, sarif: bool, quiet: bool):
+@click.option("--severity", type=str, default=None,
+              help="Only fail on these severities (comma-separated, e.g. critical,high)")
+def scan(path: str, staged: bool, no_git: bool, as_json: bool, sarif: bool, quiet: bool, severity: str):
     """Scan for secrets in PATH (default: current directory)."""
     try:
         config = load_config(Path(path))
-        findings = scan_path(path, staged_only=staged, no_git=no_git, scan_tests=config.scan_tests)
+        custom = build_custom_patterns(config)
+        findings = scan_path(
+            path,
+            staged_only=staged,
+            no_git=no_git,
+            scan_tests=config.scan_tests,
+            config_threshold=config.entropy_threshold,
+            extra_patterns=custom or None,
+        )
 
         # Filter ignored
         ignores = load_ignore_list(Path(path))
@@ -45,8 +55,15 @@ def scan(path: str, staged: bool, no_git: bool, as_json: bool, sarif: bool, quie
         else:
             print_findings(findings, quiet=quiet)
 
+        # Severity filter: only fail on specified severities
+        if severity:
+            allowed = {s.strip().lower() for s in severity.split(",")}
+            fail_findings = [f for f in findings if f.severity in allowed]
+        else:
+            fail_findings = findings
+
         # Exit code
-        if findings:
+        if fail_findings:
             if not as_json and not sarif and not quiet:
                 print_blocked_message()
             sys.exit(1)

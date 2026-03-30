@@ -45,6 +45,9 @@ _IGNORE_MARKERS = (
 _MAX_GITIGNORE_PATTERNS: int = 500
 _MAX_GITIGNORE_PATTERN_LEN: int = 200
 
+# Skip files larger than this (generated code, data files, etc.)
+_MAX_FILE_SIZE: int = 1_048_576  # 1 MB
+
 # Test file patterns -- skipped when scan_tests=False.
 _TEST_FILE_PATTERNS = ("test_*.py", "*_test.py")
 
@@ -173,14 +176,18 @@ def scan_text(
                 else matched_text
             )
 
-            # If the pattern specifies an entropy threshold, enforce it.
+            # Entropy gating: only applies to patterns that opt in via
+            # entropy_threshold.  config_threshold overrides the pattern's
+            # built-in threshold but does NOT add entropy gating to patterns
+            # that don't request it (e.g. precise regex patterns like AWS keys).
             if pattern.entropy_threshold is not None:
+                threshold = (
+                    config_threshold
+                    if config_threshold is not None
+                    else pattern.entropy_threshold
+                )
                 ent = entropy(secret_text)
-                if ent < pattern.entropy_threshold:
-                    continue
-            elif config_threshold is not None:
-                ent = entropy(secret_text)
-                if ent < config_threshold:
+                if ent < threshold:
                     continue
             else:
                 ent = 0.0
@@ -221,6 +228,13 @@ def scan_file(
     filepath = Path(filepath)
 
     if not filepath.is_file():
+        return []
+
+    # Skip oversized files (generated code, data files, etc.)
+    try:
+        if filepath.stat().st_size > _MAX_FILE_SIZE:
+            return []
+    except OSError:
         return []
 
     # Single-read: check for binary (null bytes in first 8 KB) and decode in one pass.

@@ -1,7 +1,6 @@
 """Tests for configuration loading and finding filtering (config.py)."""
 
 
-
 from gitshield.config import (
     GitShieldConfig,
     load_config,
@@ -9,6 +8,7 @@ from gitshield.config import (
     create_default_config,
     find_git_root,
     load_ignore_list,
+    build_custom_patterns,
     CONFIG_FILE,
 )
 from gitshield.scanner import Finding
@@ -206,3 +206,86 @@ fingerprint-two
         (tmp_path / ".git").mkdir()
         ignores = load_ignore_list(tmp_path)
         assert ignores == set()
+
+
+# ---------------------------------------------------------------------------
+# Custom pattern builder
+# ---------------------------------------------------------------------------
+
+class TestBuildCustomPatterns:
+    """Test build_custom_patterns converts config dicts into Pattern objects."""
+
+    def test_valid_pattern_produces_pattern_object(self):
+        """A well-formed custom pattern dict should produce a Pattern with correct fields."""
+        config = GitShieldConfig(custom_patterns=[
+            {
+                "name": "my-api-key",
+                "regex": r"MYCO_[A-Z0-9]{32}",
+                "description": "Internal API key",
+                "severity": "high",
+            }
+        ])
+        patterns = build_custom_patterns(config)
+        assert len(patterns) == 1
+        p = patterns[0]
+        assert p.id == "my-api-key"
+        assert p.name == "my-api-key"
+        assert p.description == "Internal API key"
+        assert p.severity == "high"
+        assert p.regex is not None
+        # 32 uppercase/digit characters after the "MYCO_" prefix (A*28 + 1234)
+        assert p.regex.search("MYCO_" + "A" * 28 + "1234") is not None
+
+    def test_missing_regex_skips_and_prints_stderr(self, capsys):
+        """A pattern dict without a 'regex' key should be skipped with a stderr message."""
+        config = GitShieldConfig(custom_patterns=[
+            {"name": "no-regex-pattern", "severity": "low"}
+        ])
+        patterns = build_custom_patterns(config)
+        assert patterns == []
+        captured = capsys.readouterr()
+        assert "no-regex-pattern" in captured.err
+        assert "no regex" in captured.err
+
+    def test_invalid_regex_skips_and_prints_stderr(self, capsys):
+        """A pattern dict with an un-compilable regex should be skipped with a stderr message."""
+        config = GitShieldConfig(custom_patterns=[
+            {"name": "bad-regex", "regex": r"(unclosed[group", "severity": "medium"}
+        ])
+        patterns = build_custom_patterns(config)
+        assert patterns == []
+        captured = capsys.readouterr()
+        assert "bad-regex" in captured.err
+        assert "invalid regex" in captured.err
+
+    def test_regex_too_long_skips_and_prints_stderr(self, capsys):
+        """A pattern whose regex exceeds 500 characters should be skipped with a stderr message."""
+        long_regex = "A" * 501
+        config = GitShieldConfig(custom_patterns=[
+            {"name": "long-pattern", "regex": long_regex, "severity": "low"}
+        ])
+        patterns = build_custom_patterns(config)
+        assert patterns == []
+        captured = capsys.readouterr()
+        assert "long-pattern" in captured.err
+        assert "too long" in captured.err
+
+    def test_entropy_threshold_set_correctly(self):
+        """A custom pattern with entropy_threshold should carry that value on the Pattern."""
+        config = GitShieldConfig(custom_patterns=[
+            {
+                "name": "high-entropy-token",
+                "regex": r"TOKEN_[A-Za-z0-9]{16}",
+                "severity": "medium",
+                "entropy_threshold": 3.5,
+            }
+        ])
+        patterns = build_custom_patterns(config)
+        assert len(patterns) == 1
+        assert patterns[0].entropy_threshold == 3.5
+
+    def test_empty_custom_patterns_returns_empty_list(self):
+        """When config.custom_patterns is empty, build_custom_patterns returns []."""
+        config = GitShieldConfig(custom_patterns=[])
+        patterns = build_custom_patterns(config)
+        assert patterns == []

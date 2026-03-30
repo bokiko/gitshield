@@ -1,8 +1,7 @@
 """Tests for the native secret detection engine (engine.py)."""
 
 
-
-from gitshield.engine import scan_content, scan_file, scan_directory
+from gitshield.engine import scan_content, scan_file, scan_directory, scan_text, _parse_gitignore
 from gitshield.patterns import entropy
 
 
@@ -173,3 +172,102 @@ class TestMultipleFindings:
         assert "aws-access-key-id" in rule_ids
         assert "rsa-private-key" in rule_ids
         assert len(findings) >= 2
+
+
+# ---------------------------------------------------------------------------
+# .gitignore parsing
+# ---------------------------------------------------------------------------
+
+class TestGitignoreParsing:
+    """Test _parse_gitignore reads and filters .gitignore correctly."""
+
+    def test_parse_gitignore_returns_patterns(self, tmp_path):
+        """_parse_gitignore should return the non-comment, non-blank patterns."""
+        gitignore = tmp_path / ".gitignore"
+        gitignore.write_text("*.pyc\ndist/\nbuild/\n")
+
+        patterns = _parse_gitignore(tmp_path)
+        assert "*.pyc" in patterns
+        assert "dist/" in patterns
+        assert "build/" in patterns
+        assert len(patterns) == 3
+
+    def test_parse_gitignore_skips_comments_and_blank_lines(self, tmp_path):
+        """Comments (# ...) and blank lines must not appear in the returned list."""
+        gitignore = tmp_path / ".gitignore"
+        gitignore.write_text(
+            "# This is a comment\n"
+            "\n"
+            "*.log\n"
+            "\n"
+            "# Another comment\n"
+            "secret.txt\n"
+        )
+
+        patterns = _parse_gitignore(tmp_path)
+        assert "*.log" in patterns
+        assert "secret.txt" in patterns
+        for p in patterns:
+            assert not p.startswith("#"), f"Comment leaked into patterns: {p!r}"
+        assert len(patterns) == 2
+
+    def test_parse_gitignore_missing_returns_empty(self, tmp_path):
+        """When no .gitignore exists, _parse_gitignore should return an empty list."""
+        patterns = _parse_gitignore(tmp_path)
+        assert patterns == []
+
+
+# ---------------------------------------------------------------------------
+# scan_directory options
+# ---------------------------------------------------------------------------
+
+class TestScanDirectoryOptions:
+    """Test optional behaviours of scan_directory."""
+
+    def test_scan_directory_skips_test_files_when_scan_tests_false(self, tmp_path):
+        """With scan_tests=False, test_*.py files must not be scanned."""
+        test_file = tmp_path / "test_secrets.py"
+        test_file.write_text('KEY = "AKIA1234567890ABCDEF"\n')
+
+        findings = scan_directory(str(tmp_path), scan_tests=False, no_git=True)
+        scanned_files = [f.file for f in findings]
+        assert not any("test_secrets" in fp for fp in scanned_files), (
+            "test_secrets.py should have been skipped but findings were returned"
+        )
+
+    def test_scan_text_line_offset_produces_correct_line_numbers(self):
+        """line_offset should shift reported line numbers by the given amount."""
+        # The secret is on the first line of this text snippet, but it lives at
+        # absolute line 10 in its source file, so we pass line_offset=9.
+        text = 'KEY = "AKIA1234567890ABCDEF"\n'
+        findings = scan_text(text, filename="src/config.py", line_offset=9)
+        assert len(findings) >= 1
+        for f in findings:
+            # line_offset=9 means first line (idx=1) -> reported as 10
+            assert f.line >= 10, (
+                f"Expected line >= 10 with offset 9, got {f.line}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# File size cap
+# ---------------------------------------------------------------------------
+
+class TestFileSizeCap:
+    """scan_file must silently skip files larger than 1 MB."""
+
+    def test_scan_file_skips_oversized_file(self, tmp_path):
+        """A file larger than 1 MB should return an empty findings list."""
+        large_file = tmp_path / "huge.py"
+        # Write slightly more than 1 MB of text that would otherwise trigger a
+        # pattern (embed a fake AWS key repeated throughout).
+        chunk = 'KEY = "AKIA1234567890ABCDEF"\n' * 100  # ~2.8 KB per 100 lines
+        repeats = (1_048_576 // len(chunk)) + 2          # enough to exceed 1 MB
+        large_file.write_text(chunk * repeats)
+
+        assert large_file.stat().st_size > 1_048_576, "Pre-condition: file must exceed 1 MB"
+
+        findings = scan_file(str(large_file))
+        assert findings == [], (
+            f"Expected no findings for oversized file, got {len(findings)}"
+        )

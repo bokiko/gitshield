@@ -291,6 +291,12 @@ def build_custom_patterns(config: "GitShieldConfig") -> List[Pattern]:
             print(f"gitshield: custom pattern '{pattern_id}' has no regex, skipping", file=sys.stderr)
             continue
 
+        # ReDoS mitigation: cap custom regex length.
+        _MAX_CUSTOM_REGEX_LEN = 500
+        if len(regex_str) > _MAX_CUSTOM_REGEX_LEN:
+            print(f"gitshield: custom pattern '{pattern_id}' regex too long ({len(regex_str)} > {_MAX_CUSTOM_REGEX_LEN}), skipping", file=sys.stderr)
+            continue
+
         try:
             compiled = re.compile(regex_str)
         except re.error as exc:

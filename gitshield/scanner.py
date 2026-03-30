@@ -147,7 +147,8 @@ def scan_path(
     gitleaks_bin = _has_gitleaks()
     if gitleaks_bin:
         try:
-            gitleaks_findings = _scan_with_gitleaks(path, staged_only, no_git, gitleaks_path=gitleaks_bin)
+            # Pass resolved absolute path to prevent flag injection (e.g. path="--help")
+            gitleaks_findings = _scan_with_gitleaks(str(resolved), staged_only, no_git, gitleaks_path=gitleaks_bin)
         except (ScannerError, GitleaksNotFound):
             pass  # Native engine already has results
 
@@ -162,9 +163,3 @@ def scan_path(
     return merged
 
 
-def _truncate_secret(secret: str, max_len: int = 20) -> str:
-    """Truncate secret for display, keeping start and end."""
-    if len(secret) <= max_len:
-        return secret
-    keep = (max_len - 3) // 2
-    return f"{secret[:keep]}...{secret[-keep:]}"

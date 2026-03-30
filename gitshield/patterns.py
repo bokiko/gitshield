@@ -538,6 +538,76 @@ _GENERIC_PATTERNS: List[Pattern] = [
     ),
 ]
 
+# ===== AI Services (7) ======================================================
+
+_AI_PATTERNS: List[Pattern] = [
+    Pattern(
+        id="openai-api-key",
+        name="OpenAI API Key",
+        regex=re.compile(
+            r"sk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20}"
+        ),
+        description="OpenAI API key (legacy sk-...T3BlbkFJ... format)",
+        severity="critical",
+    ),
+    Pattern(
+        id="openai-project-key",
+        name="OpenAI Project API Key",
+        regex=re.compile(
+            r"sk-proj-[A-Za-z0-9\-_]{40,}"
+        ),
+        description="OpenAI project API key (sk-proj-...)",
+        severity="critical",
+    ),
+    Pattern(
+        id="anthropic-api-key",
+        name="Anthropic API Key",
+        regex=re.compile(
+            r"sk-ant-api03-[A-Za-z0-9\-_]{90,}"
+        ),
+        description="Anthropic API key (sk-ant-api03-...)",
+        severity="critical",
+    ),
+    Pattern(
+        id="huggingface-token",
+        name="Hugging Face Token",
+        regex=re.compile(
+            r"hf_[a-zA-Z]{34}"
+        ),
+        description="Hugging Face access token (hf_...)",
+        severity="high",
+    ),
+    Pattern(
+        id="replicate-api-token",
+        name="Replicate API Token",
+        regex=re.compile(
+            r"r8_[A-Za-z0-9]{37}"
+        ),
+        description="Replicate API token (r8_...)",
+        severity="high",
+    ),
+    Pattern(
+        id="cohere-api-key",
+        name="Cohere API Key",
+        regex=re.compile(
+            r"[A-Za-z0-9]{40}"
+        ),
+        description="Cohere API key (40-char alphanumeric with co- context)",
+        severity="medium",
+        entropy_threshold=4.5,
+    ),
+    Pattern(
+        id="groq-api-key",
+        name="Groq API Key",
+        regex=re.compile(
+            r"gsk_[A-Za-z0-9]{48,}"
+        ),
+        description="Groq API key (gsk_...)",
+        severity="high",
+    ),
+]
+
+
 # ===== Other Services (10) ==================================================
 
 _OTHER_PATTERNS: List[Pattern] = [
@@ -699,6 +769,7 @@ PATTERNS: List[Pattern] = (
     + _PRIVATE_KEY_PATTERNS
     + _JWT_PATTERNS
     + _GENERIC_PATTERNS
+    + _AI_PATTERNS
     + _OTHER_PATTERNS
 )
 """All detection patterns. Iterate this to scan content."""
@@ -722,6 +793,7 @@ PATTERN_CATEGORIES: dict[str, List[Pattern]] = {
     "private_key": _PRIVATE_KEY_PATTERNS,
     "jwt": _JWT_PATTERNS,
     "generic": _GENERIC_PATTERNS,
+    "ai": _AI_PATTERNS,
     "other": _OTHER_PATTERNS,
 }
 """Patterns grouped by category for selective scanning."""

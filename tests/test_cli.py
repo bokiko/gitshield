@@ -5,6 +5,7 @@ import json
 import pytest
 from click.testing import CliRunner
 
+from gitshield import __version__
 from gitshield.cli import main
 
 
@@ -92,7 +93,7 @@ class TestMetaCommands:
         """--version should display the version string."""
         result = runner.invoke(main, ["--version"])
         assert result.exit_code == 0
-        assert "1.0.0" in result.output
+        assert __version__ in result.output
 
     def test_help(self, runner):
         """--help should display usage information."""

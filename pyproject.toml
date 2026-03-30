@@ -12,7 +12,7 @@ requires-python = ">=3.9"
 authors = [{name = "bokiko"}]
 keywords = ["security", "secrets", "scanner", "git", "claude", "ai"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
@@ -26,11 +26,11 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.0",
-    "requests>=2.28",
 ]
 
 [project.optional-dependencies]
 toml = ["tomli>=2.0; python_version < '3.11'"]
+patrol = ["requests>=2.28"]
 notify = ["resend>=0.5"]
 dev = [
     "pytest>=7.0",
