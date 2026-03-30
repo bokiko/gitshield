@@ -78,7 +78,7 @@ class GitShieldConfig:
     entropy_threshold: float = 4.5
     scan_tests: bool = False
     allowlist_paths: List[str] = field(default_factory=list)
-    allowlist_rules: List[str] = field(default_factory=list)
+    allowlist_rules: Set[str] = field(default_factory=set)
     allowlist_fingerprints: Set[str] = field(default_factory=set)
     custom_patterns: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -182,7 +182,7 @@ def load_config(path: Path) -> GitShieldConfig:
         entropy_threshold=entropy_threshold,
         scan_tests=bool(scan.get("scan_tests", False)),
         allowlist_paths=list(allowlist.get("paths", [])),
-        allowlist_rules=list(allowlist.get("rules", [])),
+        allowlist_rules=set(allowlist.get("rules", [])),
         allowlist_fingerprints=fingerprints,
         custom_patterns=list(data.get("custom_patterns", [])),
     )

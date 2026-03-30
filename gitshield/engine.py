@@ -57,16 +57,6 @@ _TEST_FILE_PATTERNS = ("test_*.py", "*_test.py")
 # ---------------------------------------------------------------------------
 
 
-def _is_binary_file(filepath: Path) -> bool:
-    """Return True if *filepath* looks like a binary file (null byte in first 8 KB)."""
-    try:
-        with open(filepath, "rb") as fh:
-            chunk = fh.read(8192)
-        return b"\x00" in chunk
-    except (OSError, IOError):
-        return True  # unreadable — treat as binary
-
-
 def _should_skip_path(path: Path) -> bool:
     """Return True if *path* should be skipped based on directory name or extension."""
     # Check only directory components for skip-listed directory names (not filename).

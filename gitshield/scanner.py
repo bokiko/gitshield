@@ -9,9 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional
 
-# Re-export from models.py so existing imports of Finding/ScannerError/GitleaksNotFound
-# from .scanner continue to work without modification.
-from .models import Finding, GitleaksNotFound, ScannerError, truncate_secret  # noqa: F401
+from .models import Finding, GitleaksNotFound, ScannerError, truncate_secret
 from .engine import scan_directory, scan_file  # noqa: F401
 
 

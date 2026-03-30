@@ -148,9 +148,9 @@ class TestFileScanning:
         assert not any(".git" in p for p in files_with_findings)
 
     def test_scan_file_fixture(self, fixtures_dir):
-        """The bundled secret_file.py fixture should produce findings."""
+        """The bundled secret_file.py fixture produces no findings (all lines inline-ignored)."""
         findings = scan_file(str(fixtures_dir / "secret_file.py"))
-        assert len(findings) >= 2  # AWS key + GitHub PAT
+        assert findings == []
 
     def test_scan_file_clean_fixture(self, fixtures_dir):
         """The bundled clean_file.py fixture should produce no findings."""

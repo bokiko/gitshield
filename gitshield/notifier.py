@@ -76,6 +76,9 @@ https://github.com/bokiko/gitshield
 To stop receiving these alerts, rotate your credentials and remove them from git history.
 """
 
+    if requests is None:
+        raise NotifierError("requests package required: pip install gitshield[patrol]")
+
     if dry_run:
         print(f"[DRY RUN] Would send email to: {to_email}")
         print(f"Subject: {subject}")
@@ -151,6 +154,9 @@ Run `gitshield scan` locally for full details including file paths and line numb
 ---
 *Automated alert from [GitShield](https://github.com/bokiko/gitshield)*
 """
+
+    if requests is None:
+        raise NotifierError("requests package required: pip install gitshield[patrol]")
 
     if dry_run:
         print(f"[DRY RUN] Would create issue on: {repo.url}")

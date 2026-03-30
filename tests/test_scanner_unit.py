@@ -5,7 +5,8 @@ import shutil
 import pytest
 
 import gitshield.scanner as scanner_mod
-from gitshield.scanner import scan_path, _has_gitleaks, ScannerError
+from gitshield.models import ScannerError
+from gitshield.scanner import scan_path, _has_gitleaks
 
 
 # ---------------------------------------------------------------------------

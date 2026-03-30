@@ -2,7 +2,7 @@
 
 
 from gitshield.hook import handle_hook, _format_block_reason, _is_sensitive_path
-from gitshield.scanner import Finding
+from gitshield.models import Finding
 
 
 # ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@ from gitshield.config import (
     build_custom_patterns,
     CONFIG_FILE,
 )
-from gitshield.scanner import Finding
+from gitshield.models import Finding
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +50,7 @@ class TestLoadConfig:
         assert config.entropy_threshold == 4.5
         assert config.scan_tests is False
         assert config.allowlist_paths == []
-        assert config.allowlist_rules == []
+        assert config.allowlist_rules == set()
         assert config.allowlist_fingerprints == set()
         assert config.custom_patterns == []
 
