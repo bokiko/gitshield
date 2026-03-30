@@ -305,12 +305,20 @@ def scan_directory(
 
     findings: List[Finding] = []
 
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         # Prune skip directories in-place to prevent descending into them.
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
 
         for filename in filenames:
             file_path = Path(dirpath) / filename
+
+            # Skip symlinks — they may point outside the repository root.
+            if file_path.is_symlink():
+                continue
+
+            # Ensure the file is within the root (guards against unusual filesystems).
+            if not file_path.resolve().is_relative_to(root):
+                continue
 
             if _should_skip_path(file_path):
                 continue
@@ -405,9 +413,33 @@ def _scan_staged(
             continue
         if not scan_tests and _is_test_file(file_path.name):
             continue
+
+        # Read the staged (index) version, not the working-tree copy.
+        # This prevents bypass: stage secret → edit working tree to remove it.
+        try:
+            show_result = subprocess.run(
+                ["git", "show", f":{rel_name}"],
+                capture_output=True,
+                cwd=str(root),
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired:
+            continue
+        except (OSError, FileNotFoundError):
+            continue
+
+        if show_result.returncode != 0:
+            continue
+
+        try:
+            staged_content = show_result.stdout.decode("utf-8", errors="replace")
+        except (UnicodeDecodeError, AttributeError):
+            continue
+
         findings.extend(
-            scan_file(
-                file_path,
+            scan_text(
+                staged_content,
+                filename=rel_name,
                 config_threshold=config_threshold,
                 extra_patterns=extra_patterns,
             )
