@@ -113,16 +113,19 @@ def _compile_gitignore_patterns(patterns: List[str]) -> List[tuple]:
 
 def _matches_gitignore(rel_path: str, ignore_patterns: List[tuple]) -> bool:
     """Return True if *rel_path* matches any pre-compiled gitignore pattern."""
+    path_obj = Path(rel_path)
+    parts = path_obj.parts
+    name = path_obj.name
     for is_dir, compiled_re in ignore_patterns:
         if is_dir:
             # Directory-only pattern: match against path components.
-            if any(compiled_re.fullmatch(part) for part in Path(rel_path).parts):
+            if any(compiled_re.fullmatch(part) for part in parts):
                 return True
         else:
             # Match against full relative path and also the basename.
             if compiled_re.fullmatch(rel_path):
                 return True
-            if compiled_re.fullmatch(Path(rel_path).name):
+            if compiled_re.fullmatch(name):
                 return True
     return False
 
@@ -155,7 +158,7 @@ def scan_text(
     """
     findings: List[Finding] = []
     lines = text.splitlines()
-    all_patterns = list(PATTERNS) + list(extra_patterns or [])
+    all_patterns = PATTERNS if not extra_patterns else list(PATTERNS) + list(extra_patterns)
 
     for idx, line in enumerate(lines, start=1):
         # Honour inline ignore directives.

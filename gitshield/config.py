@@ -173,8 +173,13 @@ def load_config(path: Path) -> GitShieldConfig:
     else:
         fingerprints = set()
 
+    try:
+        entropy_threshold = float(scan.get("entropy_threshold", 4.5))
+    except (ValueError, TypeError):
+        entropy_threshold = 4.5
+
     return GitShieldConfig(
-        entropy_threshold=float(scan.get("entropy_threshold", 4.5)),
+        entropy_threshold=entropy_threshold,
         scan_tests=bool(scan.get("scan_tests", False)),
         allowlist_paths=list(allowlist.get("paths", [])),
         allowlist_rules=list(allowlist.get("rules", [])),
@@ -270,6 +275,28 @@ def filter_findings(
 # Custom pattern builder
 # ---------------------------------------------------------------------------
 
+_REDOS_TEST_STRING = "a" * 100
+
+
+def _regex_is_safe(compiled_re) -> bool:
+    """Return True if the regex completes on a benign test string within 1 second.
+
+    Protects against catastrophic backtracking (ReDoS) in custom patterns from
+    .gitshield.toml. Uses a background thread so it works cross-platform.
+    """
+    import threading
+
+    finished = threading.Event()
+
+    def _run():
+        compiled_re.search(_REDOS_TEST_STRING)
+        finished.set()
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return finished.wait(timeout=1.0)
+
+
 def build_custom_patterns(config: "GitShieldConfig") -> List[Pattern]:
     """Convert config.custom_patterns dicts into Pattern objects.
 
@@ -301,6 +328,10 @@ def build_custom_patterns(config: "GitShieldConfig") -> List[Pattern]:
             compiled = re.compile(regex_str)
         except re.error as exc:
             print(f"gitshield: custom pattern '{pattern_id}' has invalid regex: {exc}", file=sys.stderr)
+            continue
+
+        if not _regex_is_safe(compiled):
+            print(f"gitshield: custom pattern '{pattern_id}' timed out (possible ReDoS), skipping", file=sys.stderr)
             continue
 
         try:

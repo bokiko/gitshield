@@ -30,6 +30,14 @@ SENSITIVE_PATHS = [
     ".key",
     ".p12",
     ".pfx",
+    ".htpasswd",
+    "id_rsa",
+    "id_ed25519",
+    "id_ecdsa",
+    ".netrc",
+    ".pgpass",
+    ".npmrc",
+    ".pypirc",
 ]
 
 
@@ -91,9 +99,9 @@ def handle_hook(input_data: dict) -> dict:
         custom = None
         threshold = None
 
-    # Handle Write / Edit tools
-    if tool_name in ("Write", "Edit"):
-        filepath = str(tool_input.get("file_path", tool_input.get("path", "")))
+    # Handle Write / Edit / NotebookEdit tools
+    if tool_name in ("Write", "Edit", "NotebookEdit"):
+        filepath = str(tool_input.get("file_path", tool_input.get("notebook_path", tool_input.get("path", ""))))
 
         # Skip allowed paths
         if _is_allowed_path(filepath):
@@ -103,6 +111,8 @@ def handle_hook(input_data: dict) -> dict:
         content = str(tool_input.get("content", ""))
         if not content:
             content = str(tool_input.get("new_string", ""))
+        if not content:
+            content = str(tool_input.get("cell_source", ""))
 
         if not content:
             return {"result": "approve"}
@@ -118,8 +128,8 @@ def handle_hook(input_data: dict) -> dict:
                     "result": "block",
                     "reason": _format_block_reason(findings, filepath),
                 }
-            # Non-sensitive path: block on critical/high, warn on medium/low
-            critical = [f for f in findings if f.severity in ("critical", "high")]
+            # Non-sensitive path: block on critical/high/medium
+            critical = [f for f in findings if f.severity in ("critical", "high", "medium")]
             if critical:
                 return {
                     "result": "block",
@@ -140,7 +150,7 @@ def handle_hook(input_data: dict) -> dict:
         )
 
         if findings:
-            critical = [f for f in findings if f.severity in ("critical", "high")]
+            critical = [f for f in findings if f.severity in ("critical", "high", "medium")]
             if critical:
                 return {
                     "result": "block",

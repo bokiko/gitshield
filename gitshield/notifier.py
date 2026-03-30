@@ -11,7 +11,7 @@ except ImportError:
 from .config import get_github_token
 from .models import Finding
 from .monitor import RepoInfo
-from .db import mark_notified, get_notified_fingerprints
+from .db import mark_notified, mark_notified_batch, get_notified_fingerprints
 
 
 class NotifierError(Exception):
@@ -98,9 +98,8 @@ To stop receiving these alerts, rotate your credentials and remove them from git
         )
         response.raise_for_status()
 
-        # Mark as notified
-        for f in findings:
-            mark_notified(repo.url, f.fingerprint, to_email, "email")
+        # Mark all findings as notified in a single transaction
+        mark_notified_batch(repo.url, [f.fingerprint for f in findings], to_email, "email")
 
         return True
 
@@ -174,9 +173,8 @@ Run `gitshield scan` locally for full details including file paths and line numb
         )
         response.raise_for_status()
 
-        # Mark as notified
-        for f in findings:
-            mark_notified(repo.url, f.fingerprint, method="github_issue")
+        # Mark all findings as notified in a single transaction
+        mark_notified_batch(repo.url, [f.fingerprint for f in findings], method="github_issue")
 
         return True
 
