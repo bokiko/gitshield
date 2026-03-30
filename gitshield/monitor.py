@@ -3,6 +3,7 @@
 import re
 import shutil
 import tempfile
+import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -187,13 +188,13 @@ def clone_and_scan(repo: RepoInfo, skip_recent: bool = True) -> List[Finding]:
         # Scan the cloned repo
         findings = scan_path(temp_dir, no_git=True)
 
-        # Enrich findings with repo info
-        for f in findings:
-            # Make paths relative to repo root; keep absolute if relativization fails.
-            try:
-                f.file = str(Path(f.file).relative_to(temp_dir))
-            except ValueError:
-                pass  # keep absolute path rather than discarding the finding
+        # Enrich findings with repo info — use replace() to avoid mutating shared objects.
+        findings = [
+            dataclasses.replace(f, file=str(Path(f.file).relative_to(temp_dir)))
+            if Path(f.file).is_relative_to(temp_dir)
+            else f
+            for f in findings
+        ]
 
         mark_scanned(repo.url, len(findings))
         return findings
@@ -209,32 +210,3 @@ def clone_and_scan(repo: RepoInfo, skip_recent: bool = True) -> List[Finding]:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-def get_author_email(owner: str, name: str) -> Optional[str]:
-    """Get email of the most recent committer."""
-    if requests is None:
-        return None
-
-    headers = {"Accept": "application/vnd.github.v3+json"}
-    token = get_github_token()
-    if token:
-        headers["Authorization"] = f"token {token}"
-
-    try:
-        response = requests.get(
-            f"https://api.github.com/repos/{owner}/{name}/commits",
-            headers=headers,
-            params={"per_page": 1},
-            timeout=30,
-        )
-        response.raise_for_status()
-        commits = response.json()
-
-        if commits:
-            commit = commits[0].get("commit", {})
-            author = commit.get("author", {})
-            return author.get("email")
-
-    except requests.RequestException:
-        pass
-
-    return None

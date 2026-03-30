@@ -92,6 +92,8 @@ def _scan_with_gitleaks(
         return findings
 
     except subprocess.TimeoutExpired:
+        import sys
+        print("gitshield: gitleaks timed out, using native engine only", file=sys.stderr)
         return []
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)

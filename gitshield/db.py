@@ -1,6 +1,7 @@
 """SQLite database for tracking scanned repos and notifications."""
 
 import atexit
+import os
 import sqlite3
 import threading
 from datetime import datetime
@@ -34,7 +35,9 @@ def get_connection() -> sqlite3.Connection:
         with _lock:
             if _conn is None:
                 DB_DIR.mkdir(parents=True, exist_ok=True)
+                DB_DIR.chmod(0o700)
                 _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+                os.chmod(DB_PATH, 0o600)
                 _conn.row_factory = sqlite3.Row
                 _init_tables(_conn)
     return _conn
@@ -144,12 +147,18 @@ def get_notified_fingerprints(repo_url: str, fingerprints: List[str]) -> Set[str
     if not fingerprints:
         return set()
     conn = get_connection()
-    placeholders = ",".join("?" * len(fingerprints))
-    cursor = conn.execute(
-        f"SELECT fingerprint FROM notifications WHERE repo_url = ? AND fingerprint IN ({placeholders})",
-        (repo_url, *fingerprints),
-    )
-    return {row["fingerprint"] for row in cursor.fetchall()}
+    # Batch into chunks of 500 to stay well under SQLite's SQLITE_MAX_VARIABLE_NUMBER limit.
+    _CHUNK_SIZE = 500
+    result: Set[str] = set()
+    for i in range(0, len(fingerprints), _CHUNK_SIZE):
+        chunk = fingerprints[i:i + _CHUNK_SIZE]
+        placeholders = ",".join("?" * len(chunk))
+        cursor = conn.execute(
+            f"SELECT fingerprint FROM notifications WHERE repo_url = ? AND fingerprint IN ({placeholders})",
+            (repo_url, *chunk),
+        )
+        result.update(row["fingerprint"] for row in cursor.fetchall())
+    return result
 
 
 def get_stats() -> dict:

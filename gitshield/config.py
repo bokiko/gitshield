@@ -282,10 +282,22 @@ def _regex_is_safe(compiled_re) -> bool:
     """Return True if the regex completes on a benign test string within 1 second.
 
     Protects against catastrophic backtracking (ReDoS) in custom patterns from
-    .gitshield.toml. Uses a background thread so it works cross-platform.
+    .gitshield.toml. Tries direct execution first (fast path); falls back to a
+    background thread only if the direct run exceeds 50 ms.
     """
     import threading
+    import time
 
+    # Fast path: run directly and measure wall time. Most safe patterns complete
+    # in microseconds, so we avoid thread-creation overhead (~0.5–1 ms each).
+    start = time.monotonic()
+    compiled_re.search(_REDOS_TEST_STRING)
+    elapsed = time.monotonic() - start
+    if elapsed < 0.05:
+        return True
+
+    # Slow path: the pattern took >50 ms on a short string — suspicious.
+    # Re-check with a strict 1-second timeout via a background thread.
     finished = threading.Event()
 
     def _run():
