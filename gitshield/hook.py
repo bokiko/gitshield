@@ -52,10 +52,21 @@ def _is_allowed_path(filepath: str) -> bool:
 
 
 def _is_sensitive_path(filepath: str) -> bool:
-    """Check if filepath is sensitive (env files, keys, etc.)."""
-    lower = filepath.lower()
+    """Check if filepath is sensitive (env files, keys, etc.).
+
+    Matches on full path components or filename suffix only, to avoid false
+    positives like '/app/.environment/config.py' matching '.env' or
+    '/describe_credentials_flow.py' matching 'credentials'.
+    """
+    p = Path(filepath)
+    basename = p.name.lower()
+    parts_lower = [part.lower() for part in p.parts]
     for pattern in SENSITIVE_PATHS:
-        if lower.endswith(pattern) or f"/{pattern}" in lower:
+        # Exact filename suffix match (e.g. '.env', '.pem')
+        if basename.endswith(pattern):
+            return True
+        # Exact path component match (e.g. 'credentials', 'secret' as directory)
+        if pattern in parts_lower:
             return True
     return False
 
@@ -113,6 +124,8 @@ def handle_hook(input_data: dict) -> dict:
             content = str(tool_input.get("new_string", ""))
         if not content:
             content = str(tool_input.get("cell_source", ""))
+        if not content:
+            content = str(tool_input.get("new_source", ""))
 
         if not content:
             return {"result": "approve"}

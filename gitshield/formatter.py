@@ -79,7 +79,12 @@ def print_findings(findings: List[Finding], quiet: bool = False) -> None:
 
 
 def format_findings_json(findings: List[Finding]) -> str:
-    """Return findings as a JSON string."""
+    """Return findings as a JSON string.
+
+    Note: the ``file`` field reflects whatever path was passed to the scanner.
+    When scanning with absolute paths the output will contain absolute paths.
+    Use the CLI's SARIF output (``--sarif``) for paths normalised to repo root.
+    """
     data = [
         {
             "file": f.file,

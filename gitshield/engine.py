@@ -5,6 +5,7 @@ detection. Operates on text, files, and directory trees.
 """
 
 import fnmatch
+import itertools
 import os
 import re
 import subprocess
@@ -57,6 +58,11 @@ _TEST_FILE_PATTERNS = ("test_*.py", "*_test.py")
 # ---------------------------------------------------------------------------
 
 
+def _has_binary_extension(path: Path) -> bool:
+    """Return True if *path* has a binary file extension."""
+    return path.suffix.lower() in _BINARY_EXTENSIONS
+
+
 def _should_skip_path(path: Path) -> bool:
     """Return True if *path* should be skipped based on directory name or extension."""
     # Check only directory components for skip-listed directory names (not filename).
@@ -64,9 +70,7 @@ def _should_skip_path(path: Path) -> bool:
         if part in _SKIP_DIRS:
             return True
     # Check binary extensions.
-    if path.suffix.lower() in _BINARY_EXTENSIONS:
-        return True
-    return False
+    return _has_binary_extension(path)
 
 
 def _parse_gitignore(root: Path) -> List[str]:
@@ -148,7 +152,7 @@ def scan_text(
     """
     findings: List[Finding] = []
     lines = text.splitlines()
-    all_patterns = PATTERNS if not extra_patterns else list(PATTERNS) + list(extra_patterns)
+    all_patterns = PATTERNS if not extra_patterns else itertools.chain(PATTERNS, extra_patterns)
 
     for idx, line in enumerate(lines, start=1):
         # Honour inline ignore directives.
@@ -305,14 +309,23 @@ def scan_directory(
 
     findings: List[Finding] = []
 
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         # Prune skip directories in-place to prevent descending into them.
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
 
         for filename in filenames:
             file_path = Path(dirpath) / filename
 
-            if _should_skip_path(file_path):
+            # Skip symlinks — they may point outside the repository root.
+            if file_path.is_symlink():
+                continue
+
+            # Ensure the file is within the root (guards against unusual filesystems).
+            if not file_path.resolve().is_relative_to(root):
+                continue
+
+            # Directories are already pruned above; only check binary extension here.
+            if _has_binary_extension(file_path):
                 continue
 
             # Skip test files when scan_tests is disabled.
@@ -405,9 +418,33 @@ def _scan_staged(
             continue
         if not scan_tests and _is_test_file(file_path.name):
             continue
+
+        # Read the staged (index) version, not the working-tree copy.
+        # This prevents bypass: stage secret → edit working tree to remove it.
+        try:
+            show_result = subprocess.run(
+                ["git", "show", f":{rel_name}"],
+                capture_output=True,
+                cwd=str(root),
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired:
+            continue
+        except (OSError, FileNotFoundError):
+            continue
+
+        if show_result.returncode != 0:
+            continue
+
+        try:
+            staged_content = show_result.stdout.decode("utf-8", errors="replace")
+        except (UnicodeDecodeError, AttributeError):
+            continue
+
         findings.extend(
-            scan_file(
-                file_path,
+            scan_text(
+                staged_content,
+                filename=rel_name,
                 config_threshold=config_threshold,
                 extra_patterns=extra_patterns,
             )
