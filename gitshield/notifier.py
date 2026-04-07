@@ -11,7 +11,7 @@ except ImportError:
 from .config import get_github_token
 from .models import Finding
 from .monitor import RepoInfo
-from .db import mark_notified, mark_notified_batch, get_notified_fingerprints
+from .db import mark_notified_batch, get_notified_fingerprints
 
 
 class NotifierError(Exception):

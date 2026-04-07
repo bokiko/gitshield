@@ -1,6 +1,5 @@
 """Tests for notifier.py — email and GitHub issue notifications."""
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest

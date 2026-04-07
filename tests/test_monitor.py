@@ -1,6 +1,5 @@
 """Tests for monitor.py (GitHub patrol feature)."""
 
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -91,7 +90,7 @@ class TestCloneAndScan:
              patch("gitshield.monitor.scan_path", return_value=[]), \
              patch("gitshield.monitor.mark_scanned"):
             mock_run.return_value = MagicMock(returncode=0)
-            result = clone_and_scan(repo, skip_recent=False)
+            clone_and_scan(repo, skip_recent=False)
         mock_recent.assert_not_called()
 
     def test_rejects_non_github_clone_url(self):
