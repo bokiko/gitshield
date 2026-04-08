@@ -1,8 +1,10 @@
 """Tests for the native secret detection engine (engine.py)."""
 
 
+import re
+
 from gitshield.engine import scan_content, scan_file, scan_directory, scan_text, _parse_gitignore
-from gitshield.patterns import entropy
+from gitshield.patterns import Pattern, entropy
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +249,29 @@ class TestScanDirectoryOptions:
             assert f.line >= 10, (
                 f"Expected line >= 10 with offset 9, got {f.line}"
             )
+
+    def test_scan_text_extra_patterns_checked_on_all_lines(self):
+        """Regression test for BUG-001: extra_patterns must be reusable across lines.
+
+        When extra_patterns is provided, itertools.chain() was used which exhausts
+        after the first line, silently skipping patterns on lines 2+.
+        """
+        custom_pattern = Pattern(
+            id="test-custom",
+            name="Test Custom Secret",
+            regex=re.compile(r"MY_SECRET_VALUE_\w+"),
+            description="Custom test pattern",
+            severity="high",
+        )
+        text = (
+            "line_one = 'nothing here'\n"
+            "line_two = 'MY_SECRET_VALUE_ABCDEF'\n"
+            "line_three = 'MY_SECRET_VALUE_GHIJKL'\n"
+        )
+        findings = scan_text(text, filename="config.py", extra_patterns=[custom_pattern])
+        matched_lines = {f.line for f in findings if f.rule_id == "test-custom"}
+        assert 2 in matched_lines, "Secret on line 2 was not detected with extra_patterns"
+        assert 3 in matched_lines, "Secret on line 3 was not detected with extra_patterns"
 
 
 # ---------------------------------------------------------------------------
