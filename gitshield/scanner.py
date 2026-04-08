@@ -37,9 +37,16 @@ def _scan_with_gitleaks(
             "  (GitShield's native engine is still active)"
         )
 
-    tmp_dir = tempfile.mkdtemp()
+    # Set restrictive umask before creating the temp directory so that both
+    # the directory and the report file gitleaks writes inside it are created
+    # with 0o700/0o600 permissions from the start (no race window).
+    old_umask = os.umask(0o077)
+    try:
+        tmp_dir = tempfile.mkdtemp()
+    finally:
+        os.umask(old_umask)
     report_path = str(Path(tmp_dir) / "report.json")
-    # Restrict report file permissions on multi-user systems.
+    # Ensure the directory itself is also restricted.
     os.chmod(tmp_dir, 0o700)
 
     try:

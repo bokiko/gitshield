@@ -9,8 +9,7 @@ except ImportError:
     requests = None  # type: ignore[assignment]  # optional dep: pip install gitshield[patrol]
 
 from .config import get_github_token
-from .models import Finding
-from .monitor import RepoInfo
+from .models import Finding, RepoInfo
 from .db import mark_notified_batch, get_notified_fingerprints
 
 

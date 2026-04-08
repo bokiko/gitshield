@@ -2,6 +2,7 @@
 
 
 import re
+import subprocess
 
 from gitshield.engine import scan_content, scan_file, scan_directory, scan_text, _parse_gitignore
 from gitshield.patterns import Pattern, entropy
@@ -95,6 +96,97 @@ class TestEntropy:
 
     def test_entropy_empty_string(self):
         assert entropy("") == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Staged-file scanning (_scan_staged / scan_directory staged_only=True)
+# ---------------------------------------------------------------------------
+
+def _git(args, cwd):
+    """Run a git command in *cwd*, raising if it fails."""
+    subprocess.run(["git"] + args, cwd=str(cwd), check=True,
+                   capture_output=True)
+
+
+def _init_git_repo(path):
+    """Initialise a minimal git repo suitable for staging tests."""
+    _git(["init"], path)
+    _git(["config", "user.email", "test@example.com"], path)
+    _git(["config", "user.name", "Test"], path)
+
+
+class TestScanStaged:
+    """Tests for _scan_staged via scan_directory(staged_only=True)."""
+
+    def test_finds_secret_in_staged_file(self, tmp_path):
+        """A staged file containing a secret should produce a finding."""
+        _init_git_repo(tmp_path)
+        secret_file = tmp_path / "creds.py"
+        secret_file.write_text('AWS_KEY = "AKIA1234567890ABCDEF"\n')
+        _git(["add", "creds.py"], tmp_path)
+
+        findings = scan_directory(tmp_path, staged_only=True)
+        assert len(findings) >= 1
+        rule_ids = [f.rule_id for f in findings]
+        assert "aws-access-key-id" in rule_ids
+
+    def test_no_findings_when_nothing_staged(self, tmp_path):
+        """With no staged files, scan_directory should return []."""
+        _init_git_repo(tmp_path)
+        # Write a file but do NOT stage it.
+        (tmp_path / "creds.py").write_text('AWS_KEY = "AKIA1234567890ABCDEF"\n')
+
+        findings = scan_directory(tmp_path, staged_only=True)
+        assert findings == []
+
+    def test_skips_binary_staged_file(self, tmp_path):
+        """A staged binary file should be silently skipped."""
+        _init_git_repo(tmp_path)
+        binary_file = tmp_path / "data.bin"
+        binary_file.write_bytes(b"AKIA1234567890ABCDEF\x00binary junk")
+        _git(["add", "data.bin"], tmp_path)
+
+        findings = scan_directory(tmp_path, staged_only=True)
+        assert findings == []
+
+    def test_staged_version_scanned_not_working_tree(self, tmp_path):
+        """The staged (index) version should be scanned, not the working tree copy.
+
+        Stage a file with a secret, then overwrite the working tree copy to
+        remove the secret. The scan should still find the staged secret.
+        """
+        _init_git_repo(tmp_path)
+        secret_file = tmp_path / "config.py"
+        secret_file.write_text('TOKEN = "AKIA1234567890ABCDEF"\n')
+        _git(["add", "config.py"], tmp_path)
+        # Overwrite working tree copy (remove the secret).
+        secret_file.write_text('TOKEN = "replaced"\n')
+
+        findings = scan_directory(tmp_path, staged_only=True)
+        assert len(findings) >= 1
+        rule_ids = [f.rule_id for f in findings]
+        assert "aws-access-key-id" in rule_ids
+
+    def test_path_traversal_skipped(self, tmp_path):
+        """rel_names containing '..' components must be skipped, not passed to git."""
+        from gitshield.engine import _scan_staged
+        from pathlib import Path
+        import unittest.mock as mock
+
+        _init_git_repo(tmp_path)
+
+        # Simulate git diff --cached --name-only returning a path with '..'.
+        malicious = "../../../etc/passwd"
+        fake_diff = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=malicious + "\n", stderr=""
+        )
+        with mock.patch("gitshield.engine.subprocess.run") as mock_run:
+            # First call: git diff --cached --name-only
+            # Second call should NOT happen (traversal skipped) but we set it up anyway.
+            mock_run.return_value = fake_diff
+            findings = _scan_staged(Path(tmp_path))
+
+        assert findings == []
 
 
 # ---------------------------------------------------------------------------

@@ -45,6 +45,8 @@ def get_connection() -> sqlite3.Connection:
 
 def _init_tables(conn: sqlite3.Connection) -> None:
     """Create tables if they don't exist."""
+    # Enable WAL mode for better concurrent read/write access.
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS scanned_repos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

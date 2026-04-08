@@ -1,10 +1,8 @@
 """GitHub Events API client for monitoring public repos."""
 
-import re
 import shutil
 import tempfile
 import dataclasses
-from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 import subprocess
@@ -16,28 +14,8 @@ except ImportError:
 
 from .config import get_github_token
 from .db import was_scanned_recently, mark_scanned
-from .models import Finding
+from .models import Finding, RepoInfo  # noqa: F401 — re-exported for backward compat
 from .scanner import scan_path
-
-# Valid GitHub owner/name characters.
-_VALID_GH_NAME = re.compile(r'^[A-Za-z0-9._-]+$')
-
-
-@dataclass
-class RepoInfo:
-    """Information about a GitHub repository."""
-    owner: str
-    name: str
-    url: str
-    clone_url: str
-    author_email: Optional[str] = None
-    author_name: Optional[str] = None
-
-    def __post_init__(self):
-        if not _VALID_GH_NAME.match(self.owner):
-            raise ValueError(f"Invalid GitHub owner: {self.owner!r}")
-        if not _VALID_GH_NAME.match(self.name):
-            raise ValueError(f"Invalid GitHub repo name: {self.name!r}")
 
 
 class GitHubError(Exception):
@@ -104,14 +82,17 @@ def fetch_public_events(limit: int = 30) -> List[RepoInfo]:
             author_email = author.get("email")
             author_name = author.get("name")
 
-        repos.append(RepoInfo(
-            owner=owner,
-            name=name,
-            url=f"https://github.com/{owner}/{name}",
-            clone_url=f"https://github.com/{owner}/{name}.git",
-            author_email=author_email,
-            author_name=author_name,
-        ))
+        try:
+            repos.append(RepoInfo(
+                owner=owner,
+                name=name,
+                url=f"https://github.com/{owner}/{name}",
+                clone_url=f"https://github.com/{owner}/{name}.git",
+                author_email=author_email,
+                author_name=author_name,
+            ))
+        except ValueError:
+            continue
 
         seen.add(repo_name)
 

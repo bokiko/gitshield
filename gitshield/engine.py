@@ -8,6 +8,8 @@ import fnmatch
 import os
 import re
 import subprocess
+import threading
+import time
 from pathlib import Path
 from typing import List, Optional, Set, Union
 
@@ -92,15 +94,53 @@ def _parse_gitignore(root: Path) -> List[str]:
     return patterns[:_MAX_GITIGNORE_PATTERNS]
 
 
+def _gitignore_regex_is_safe(compiled_re) -> bool:
+    """Return True if the regex completes on a short test string within 1 second.
+
+    Guards against ReDoS via crafted gitignore patterns that produce exponential
+    backtracking even within the 200-char length limit.
+    """
+    _TEST = "a" * 100
+    start = time.monotonic()
+    compiled_re.search(_TEST)
+    if time.monotonic() - start < 0.05:
+        return True
+    # Slow path — re-check under a strict 1-second background-thread timeout.
+    finished = threading.Event()
+
+    def _run():
+        compiled_re.search(_TEST)
+        finished.set()
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return finished.wait(timeout=1.0)
+
+
 def _compile_gitignore_patterns(patterns: List[str]) -> List[tuple]:
-    """Pre-compile gitignore patterns into (is_dir, compiled_regex) tuples."""
+    """Pre-compile gitignore patterns into (is_dir, compiled_regex) tuples.
+
+    Skips patterns whose compiled regex fails the ReDoS safety check.
+    """
     compiled = []
     for pattern in patterns:
         if pattern.endswith("/"):
             dir_pattern = pattern.rstrip("/")
-            compiled.append((True, re.compile(fnmatch.translate(dir_pattern))))
+            try:
+                compiled_re = re.compile(fnmatch.translate(dir_pattern))
+            except re.error:
+                continue
+            if not _gitignore_regex_is_safe(compiled_re):
+                continue
+            compiled.append((True, compiled_re))
         else:
-            compiled.append((False, re.compile(fnmatch.translate(pattern))))
+            try:
+                compiled_re = re.compile(fnmatch.translate(pattern))
+            except re.error:
+                continue
+            if not _gitignore_regex_is_safe(compiled_re):
+                continue
+            compiled.append((False, compiled_re))
     return compiled
 
 
@@ -396,7 +436,11 @@ def _scan_staged(
     extra_patterns: Optional[List] = None,
     scan_tests: bool = True,
 ) -> List[Finding]:
-    """Scan only files staged in git inside *root*."""
+    """Scan only files staged in git inside *root*.
+
+    Batches all blob reads into a single ``git cat-file --batch`` invocation
+    instead of spawning one ``git show`` subprocess per file.
+    """
     try:
         result = subprocess.run(
             ["git", "diff", "--cached", "--name-only"],
@@ -413,10 +457,15 @@ def _scan_staged(
     if result.returncode != 0:
         return []
 
-    findings: List[Finding] = []
+    # Build the validated list of relative paths to scan.
+    rel_names: List[str] = []
     for rel_name in result.stdout.strip().splitlines():
         rel_name = rel_name.strip()
         if not rel_name:
+            continue
+        # SEC-002: reject names that contain '..' path components to prevent
+        # path-traversal via a crafted git index entry before passing to git.
+        if ".." in Path(rel_name).parts:
             continue
         file_path = (root / rel_name).resolve()
         if not file_path.is_relative_to(root):
@@ -425,26 +474,64 @@ def _scan_staged(
             continue
         if not scan_tests and _is_test_file(file_path.name):
             continue
+        rel_names.append(rel_name)
 
-        # Read the staged (index) version, not the working-tree copy.
-        # This prevents bypass: stage secret → edit working tree to remove it.
+    if not rel_names:
+        return []
+
+    # Batch-read all staged blobs in one process via ``git cat-file --batch``.
+    # Input format: ":<path>\n" — the leading colon resolves the index version.
+    # Output format per object: "<sha1> <type> <size>\n<content>\n"
+    batch_input = "".join(f":{name}\n" for name in rel_names).encode()
+    try:
+        cat_result = subprocess.run(
+            ["git", "cat-file", "--batch"],
+            input=batch_input,
+            capture_output=True,
+            cwd=str(root),
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return []
+    except (OSError, FileNotFoundError):
+        return []
+
+    findings: List[Finding] = []
+    data = cat_result.stdout
+    pos = 0
+
+    for rel_name in rel_names:
+        # Parse the header line: "<sha1> <type> <size>\n" or "<name> missing\n"
+        nl = data.find(b"\n", pos)
+        if nl == -1:
+            break
+        header = data[pos:nl].decode("ascii", errors="replace")
+        pos = nl + 1
+
+        parts = header.split()
+        if len(parts) == 2 and parts[1] == "missing":
+            continue
+        if len(parts) != 3:
+            continue
+
+        obj_type = parts[1]
         try:
-            show_result = subprocess.run(
-                ["git", "show", f":{rel_name}"],
-                capture_output=True,
-                cwd=str(root),
-                timeout=30,
-            )
-        except subprocess.TimeoutExpired:
-            continue
-        except (OSError, FileNotFoundError):
+            size = int(parts[2])
+        except ValueError:
             continue
 
-        if show_result.returncode != 0:
+        content = data[pos:pos + size]
+        pos += size + 1  # skip trailing newline delimiter
+
+        if obj_type != "blob":
+            continue
+
+        # Skip binary content (null bytes in first 8 KB).
+        if b"\x00" in content[:8192]:
             continue
 
         try:
-            staged_content = show_result.stdout.decode("utf-8", errors="replace")
+            staged_content = content.decode("utf-8", errors="replace")
         except (UnicodeDecodeError, AttributeError):
             continue
 

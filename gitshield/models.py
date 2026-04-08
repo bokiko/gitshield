@@ -3,8 +3,30 @@
 Extracted to break the circular import between scanner.py and engine.py.
 """
 
+import re
 from dataclasses import dataclass
 from typing import Optional
+
+# Valid GitHub owner/name characters.  Defined here alongside RepoInfo so that
+# notifier.py can import RepoInfo without depending on monitor.py.
+_VALID_GH_NAME = re.compile(r'^[A-Za-z0-9._-]+$')
+
+
+@dataclass
+class RepoInfo:
+    """Information about a GitHub repository."""
+    owner: str
+    name: str
+    url: str
+    clone_url: str
+    author_email: Optional[str] = None
+    author_name: Optional[str] = None
+
+    def __post_init__(self):
+        if not _VALID_GH_NAME.match(self.owner):
+            raise ValueError(f"Invalid GitHub owner: {self.owner!r}")
+        if not _VALID_GH_NAME.match(self.name):
+            raise ValueError(f"Invalid GitHub repo name: {self.name!r}")
 
 
 @dataclass

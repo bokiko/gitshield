@@ -1,6 +1,8 @@
 """Tests for configuration loading and finding filtering (config.py)."""
 
 
+import re
+
 from gitshield.config import (
     GitShieldConfig,
     load_config,
@@ -9,6 +11,7 @@ from gitshield.config import (
     find_git_root,
     load_ignore_list,
     build_custom_patterns,
+    _regex_is_safe,
     CONFIG_FILE,
 )
 from gitshield.models import Finding
@@ -289,3 +292,43 @@ class TestBuildCustomPatterns:
         config = GitShieldConfig(custom_patterns=[])
         patterns = build_custom_patterns(config)
         assert patterns == []
+
+
+# ---------------------------------------------------------------------------
+# ReDoS protection (_regex_is_safe)
+# ---------------------------------------------------------------------------
+
+class TestRegexSafety:
+    """Verify that _regex_is_safe accepts safe patterns and rejects ReDoS patterns."""
+
+    def test_safe_pattern_returns_true(self):
+        """A simple, fast-completing pattern should be considered safe."""
+        compiled = re.compile(r"MYCO_[A-Z0-9]{32}")
+        assert _regex_is_safe(compiled) is True
+
+    def test_safe_wildcard_pattern_returns_true(self):
+        """A typical secret-detection pattern should pass the safety check."""
+        compiled = re.compile(r"[A-Za-z0-9+/]{40}")
+        assert _regex_is_safe(compiled) is True
+
+    def test_build_custom_patterns_skips_redos_pattern(self, capsys):
+        """A custom pattern that triggers ReDoS should be skipped by build_custom_patterns.
+
+        We simulate this by monkeypatching _regex_is_safe to return False for a
+        specific pattern so the test doesn't actually hang.
+        """
+        import gitshield.config as config_module
+        original = config_module._regex_is_safe
+
+        def _always_unsafe(compiled_re):
+            return False
+
+        config_module._regex_is_safe = _always_unsafe
+        try:
+            config = GitShieldConfig(custom_patterns=[
+                {"name": "redos-pattern", "regex": r"MYCO_[A-Z0-9]{32}", "severity": "high"}
+            ])
+            patterns = build_custom_patterns(config)
+            assert patterns == []
+        finally:
+            config_module._regex_is_safe = original
