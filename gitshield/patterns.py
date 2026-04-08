@@ -773,27 +773,3 @@ PATTERNS: List[Pattern] = (
     + _OTHER_PATTERNS
 )
 """All detection patterns. Iterate this to scan content."""
-
-
-# ---------------------------------------------------------------------------
-# Category lookup for grouping / filtering
-# ---------------------------------------------------------------------------
-
-PATTERN_CATEGORIES: dict[str, List[Pattern]] = {
-    "aws": _AWS_PATTERNS,
-    "gcp": _GCP_PATTERNS,
-    "azure": _AZURE_PATTERNS,
-    "github": _GITHUB_PATTERNS,
-    "gitlab": _GITLAB_PATTERNS,
-    "slack": _SLACK_PATTERNS,
-    "stripe": _STRIPE_PATTERNS,
-    "twilio": _TWILIO_PATTERNS,
-    "sendgrid": _SENDGRID_PATTERNS,
-    "database": _DATABASE_PATTERNS,
-    "private_key": _PRIVATE_KEY_PATTERNS,
-    "jwt": _JWT_PATTERNS,
-    "generic": _GENERIC_PATTERNS,
-    "ai": _AI_PATTERNS,
-    "other": _OTHER_PATTERNS,
-}
-"""Patterns grouped by category for selective scanning."""

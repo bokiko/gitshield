@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import List
 
-from .config import build_custom_patterns, load_config
+from .config import build_custom_patterns, find_git_root, load_config
 from .engine import scan_content
 from .models import Finding
 
@@ -100,9 +100,18 @@ def handle_hook(input_data: dict) -> dict:
     tool_name = input_data.get("tool_name", "")
     tool_input = input_data.get("tool_input", {})
 
+    # Derive the config load path from tool_input's file_path when available,
+    # so the correct .gitshield.toml is found even when CWD is a subdirectory.
+    _fp = (
+        tool_input.get("file_path")
+        or tool_input.get("notebook_path")
+        or tool_input.get("path")
+    )
+    _config_start = Path(_fp).parent if _fp else Path(".")
+
     # Load config for custom patterns and entropy threshold.
     try:
-        config = load_config(Path("."))
+        config = load_config(_config_start)
         custom = build_custom_patterns(config) or None
         threshold = config.entropy_threshold
     except Exception:
@@ -148,6 +157,18 @@ def handle_hook(input_data: dict) -> dict:
                     "result": "block",
                     "reason": _format_block_reason(critical, filepath),
                 }
+            # Low-severity findings are approved but logged so users are aware.
+            # Note: custom patterns with severity='low' will never block here.
+            # To block low-severity findings, mark the file as sensitive or raise
+            # the pattern severity in .gitshield.toml.
+            low = [f for f in findings if f.severity == "low"]
+            if low:
+                types = sorted(set(f.rule_id for f in low))
+                print(
+                    f"gitshield: {len(low)} low-severity finding(s) approved"
+                    f" in {filepath}: {', '.join(types)}",
+                    file=sys.stderr,
+                )
 
         return {"result": "approve"}
 

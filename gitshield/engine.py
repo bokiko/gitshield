@@ -254,6 +254,7 @@ def scan_file(
     config_threshold: Optional[float] = None,
     extra_patterns: Optional[List] = None,
     max_findings: Optional[int] = None,
+    scan_tests: bool = True,
 ) -> List[Finding]:
     """Scan a single file for secrets.
 
@@ -264,11 +265,16 @@ def scan_file(
         filepath: Path to the file to scan.
         config_threshold: Entropy threshold override for patterns without one.
         extra_patterns: Additional Pattern objects beyond the built-in list.
+        max_findings: Stop scanning after this many findings (None = no limit).
+        scan_tests: If False, return [] for test files (test_*.py, *_test.py).
 
     Returns:
         List of Finding objects.
     """
     filepath = Path(filepath)
+
+    if not scan_tests and _is_test_file(filepath.name):
+        return []
 
     if not filepath.is_file():
         return []

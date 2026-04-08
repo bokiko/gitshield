@@ -251,6 +251,22 @@ class TestFileScanning:
         findings = scan_file(str(fixtures_dir / "clean_file.py"))
         assert findings == []
 
+    def test_scan_file_scan_tests_false_skips_test_file(self, tmp_path):
+        """scan_file with scan_tests=False should return [] for test_*.py files."""
+        test_file = tmp_path / "test_auth.py"
+        test_file.write_text('AWS_KEY = "AKIA1234567890ABCDEF"\n')
+
+        findings = scan_file(str(test_file), scan_tests=False)
+        assert findings == []
+
+    def test_scan_file_scan_tests_true_scans_test_file(self, tmp_path):
+        """scan_file with scan_tests=True (default) should scan test files normally."""
+        test_file = tmp_path / "test_auth.py"
+        test_file.write_text('AWS_KEY = "AKIA1234567890ABCDEF"\n')
+
+        findings = scan_file(str(test_file), scan_tests=True)
+        assert len(findings) >= 1
+
 
 # ---------------------------------------------------------------------------
 # Multiple findings on a single line

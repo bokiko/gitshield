@@ -210,6 +210,25 @@ fingerprint-two
         ignores = load_ignore_list(tmp_path)
         assert ignores == set()
 
+    def test_load_ignore_list_unreadable(self, tmp_path):
+        """Unreadable .gitshieldignore should return an empty set (fail-open)."""
+        import os
+        import sys
+
+        if sys.platform == "win32":
+            return  # chmod 000 not meaningful on Windows
+
+        (tmp_path / ".git").mkdir()
+        ignore_file = tmp_path / ".gitshieldignore"
+        ignore_file.write_text("fingerprint-one\n")
+        os.chmod(ignore_file, 0o000)
+
+        try:
+            ignores = load_ignore_list(tmp_path)
+            assert ignores == set()
+        finally:
+            os.chmod(ignore_file, 0o644)
+
 
 # ---------------------------------------------------------------------------
 # Custom pattern builder

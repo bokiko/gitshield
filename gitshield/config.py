@@ -122,11 +122,14 @@ def load_ignore_list(path: Path) -> Set[str]:
         return set()
 
     ignores = set()
-    with open(ignore_file, encoding="utf-8", errors="replace") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                ignores.add(line)
+    try:
+        with open(ignore_file, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    ignores.add(line)
+    except OSError:
+        return set()
 
     return ignores
 
