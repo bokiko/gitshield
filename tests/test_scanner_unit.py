@@ -1,12 +1,16 @@
 """Unit tests for the scanner orchestrator (gitshield/scanner.py)."""
 
+import json
 import shutil
+import subprocess
+import tempfile
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 import gitshield.scanner as scanner_mod
-from gitshield.models import ScannerError
-from gitshield.scanner import scan_path, _has_gitleaks
+from gitshield.models import Finding, ScannerError
+from gitshield.scanner import scan_path, _has_gitleaks, _scan_with_gitleaks
 
 
 # ---------------------------------------------------------------------------
@@ -179,3 +183,115 @@ class TestDeadCodeRemoved:
             "Found 'def _truncate_secret' in scanner.py source — "
             "this dead function should have been removed."
         )
+
+
+# ---------------------------------------------------------------------------
+# _scan_with_gitleaks: field mapping, timeout, and merge logic (TEST-001)
+# ---------------------------------------------------------------------------
+
+_GITLEAKS_JSON = [
+    {
+        "File": "src/config.py",
+        "StartLine": 5,
+        "RuleID": "aws-access-key-id",
+        "Secret": "AKIA" + "TEST1234567890AB",
+        "Fingerprint": "src/config.py:aws-access-key-id:5",
+        "Entropy": 3.5,
+        "Commit": "abc123",
+        "Author": "dev",
+    }
+]
+
+
+class TestGitleaksIntegration:
+    """Tests for _scan_with_gitleaks field mapping, timeout, and merge logic."""
+
+    def test_finding_fields_are_mapped_correctly(self, tmp_path):
+        """_scan_with_gitleaks maps gitleaks JSON fields to Finding attributes."""
+        report_file = tmp_path / "report.json"
+        report_file.write_text(json.dumps(_GITLEAKS_JSON))
+
+        fake_result = MagicMock()
+        fake_result.stderr = ""
+        fake_result.returncode = 0
+
+        with patch("gitshield.scanner.tempfile.mkdtemp", return_value=str(tmp_path)), \
+             patch("gitshield.scanner.subprocess.run", return_value=fake_result), \
+             patch("gitshield.scanner.shutil.rmtree"):
+            findings = _scan_with_gitleaks("/some/path", gitleaks_path="/usr/bin/gitleaks")
+
+        assert len(findings) == 1
+        f = findings[0]
+        assert f.file == "src/config.py"
+        assert f.line == 5
+        assert f.rule_id == "aws-access-key-id"
+        assert f.fingerprint == "src/config.py:aws-access-key-id:5"
+        assert f.entropy == 3.5
+        assert f.commit == "abc123"
+        assert f.author == "dev"
+
+    def test_empty_report_returns_empty_list(self, tmp_path):
+        """_scan_with_gitleaks returns [] when gitleaks writes an empty JSON array."""
+        report_file = tmp_path / "report.json"
+        report_file.write_text("[]")
+
+        fake_result = MagicMock()
+        fake_result.stderr = ""
+        fake_result.returncode = 0
+
+        with patch("gitshield.scanner.tempfile.mkdtemp", return_value=str(tmp_path)), \
+             patch("gitshield.scanner.subprocess.run", return_value=fake_result), \
+             patch("gitshield.scanner.shutil.rmtree"):
+            findings = _scan_with_gitleaks("/some/path", gitleaks_path="/usr/bin/gitleaks")
+
+        assert findings == []
+
+    def test_timeout_returns_empty_list(self, tmp_path):
+        """_scan_with_gitleaks returns [] when gitleaks subprocess times out."""
+        with patch("gitshield.scanner.tempfile.mkdtemp", return_value=str(tmp_path)), \
+             patch("gitshield.scanner.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired(cmd="gitleaks", timeout=120)), \
+             patch("gitshield.scanner.shutil.rmtree"):
+            findings = _scan_with_gitleaks("/some/path", gitleaks_path="/usr/bin/gitleaks")
+
+        assert findings == []
+
+    def test_scan_path_deduplicates_by_fingerprint(self, tmp_path):
+        """scan_path merge drops gitleaks findings whose fingerprint matches a native finding."""
+        # Create a file with a real AWS key that the native engine will catch.
+        secret_file = tmp_path / "creds.py"
+        secret_file.write_text('KEY = "AKIA1234567890ABCDEF"\n')
+
+        native_findings = scan_path(str(secret_file))
+        assert native_findings, "Native engine must detect the AWS key for this test to be valid"
+
+        # Build a gitleaks finding with the same fingerprint as the first native finding.
+        dupe_fingerprint = native_findings[0].fingerprint
+        gitleaks_dupe = [Finding(
+            file=str(secret_file),
+            line=native_findings[0].line,
+            rule_id="aws-access-key-id",
+            secret="AKIA" + "DUPE",
+            fingerprint=dupe_fingerprint,
+            entropy=3.5,
+        )]
+        # A second finding with a unique fingerprint that should be added.
+        gitleaks_unique = [Finding(
+            file=str(secret_file),
+            line=99,
+            rule_id="generic-api-key",
+            secret="unique-secret",
+            fingerprint="unique-fingerprint-xyz",
+            entropy=4.0,
+        )]
+
+        with patch.object(scanner_mod, "_has_gitleaks", return_value="/usr/bin/gitleaks"), \
+             patch("gitshield.scanner._scan_with_gitleaks",
+                   return_value=gitleaks_dupe + gitleaks_unique):
+            merged = scan_path(str(secret_file))
+
+        fingerprints = [f.fingerprint for f in merged]
+        # Duplicate should appear only once.
+        assert fingerprints.count(dupe_fingerprint) == 1
+        # Unique gitleaks finding should be present.
+        assert "unique-fingerprint-xyz" in fingerprints

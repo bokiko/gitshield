@@ -133,6 +133,7 @@ def scan_text(
     line_offset: int = 0,
     config_threshold: Optional[float] = None,
     extra_patterns: Optional[List] = None,
+    max_findings: Optional[int] = None,
 ) -> List[Finding]:
     """Scan a text string line-by-line against all patterns.
 
@@ -145,6 +146,9 @@ def scan_text(
             of *text* is reported as line 1.  To report absolute line numbers
             when *text* is a slice starting at line N of a larger file, pass
             ``line_offset=N-1`` so that the first scanned line is reported as N.
+        max_findings: If set, stop scanning once this many findings are
+            accumulated.  Useful for short-circuiting obviously-compromised
+            files.  Defaults to None (no limit).
 
     Returns:
         List of Finding objects (one per pattern match per line).
@@ -154,6 +158,8 @@ def scan_text(
     all_patterns = PATTERNS if not extra_patterns else PATTERNS + extra_patterns
 
     for idx, line in enumerate(lines, start=1):
+        if max_findings is not None and len(findings) >= max_findings:
+            break
         # Honour inline ignore directives.
         if any(marker in line for marker in _IGNORE_MARKERS):
             continue
@@ -207,6 +213,7 @@ def scan_file(
     filepath: Union[str, Path],
     config_threshold: Optional[float] = None,
     extra_patterns: Optional[List] = None,
+    max_findings: Optional[int] = None,
 ) -> List[Finding]:
     """Scan a single file for secrets.
 
@@ -253,6 +260,7 @@ def scan_file(
         filename=str(filepath),
         config_threshold=config_threshold,
         extra_patterns=extra_patterns,
+        max_findings=max_findings,
     )
 
 
