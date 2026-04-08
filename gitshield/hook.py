@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import List
 
-from .config import build_custom_patterns, find_git_root, load_config
+from .config import build_custom_patterns, load_config
 from .engine import scan_content
 from .models import Finding
 

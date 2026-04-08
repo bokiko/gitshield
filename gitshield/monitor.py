@@ -4,7 +4,7 @@ import shutil
 import tempfile
 import dataclasses
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 import subprocess
 
 try:
