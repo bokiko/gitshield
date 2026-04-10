@@ -99,13 +99,11 @@ def _gitignore_regex_is_safe(compiled_re) -> bool:
 
     Guards against ReDoS via crafted gitignore patterns that produce exponential
     backtracking even within the 200-char length limit.
+
+    Always uses a background thread to ensure the main thread is never blocked
+    by a pathological pattern.
     """
     _TEST = "a" * 100
-    start = time.monotonic()
-    compiled_re.search(_TEST)
-    if time.monotonic() - start < 0.05:
-        return True
-    # Slow path — re-check under a strict 1-second background-thread timeout.
     finished = threading.Event()
 
     def _run():
@@ -246,6 +244,9 @@ def scan_text(
                 severity=pattern.severity,
             ))
 
+    # Trim to max_findings in case the inner pattern loop overshot.
+    if max_findings is not None:
+        return findings[:max_findings]
     return findings
 
 
@@ -508,19 +509,30 @@ def _scan_staged(
 
     for rel_name in rel_names:
         # Parse the header line: "<sha1> <type> <size>\n" or "<name> missing\n"
+        if pos >= len(data):
+            break
         nl = data.find(b"\n", pos)
         if nl == -1:
-            break
+            break  # truncated output -- no newline terminator
         header = data[pos:nl].decode("ascii", errors="replace")
         pos = nl + 1
 
         parts = header.split()
         if len(parts) == 2 and parts[1] == "missing":
             continue
-        if len(parts) != 3:
-            continue
+        if len(parts) < 3:
+            continue  # malformed header -- skip entry
 
         obj_type = parts[1]
+        if obj_type != "blob":
+            # Not a blob (e.g. tree, commit) -- must still advance past content.
+            try:
+                size = int(parts[2])
+            except ValueError:
+                continue
+            pos += size + 1
+            continue
+
         try:
             size = int(parts[2])
         except ValueError:
@@ -528,9 +540,6 @@ def _scan_staged(
 
         content = data[pos:pos + size]
         pos += size + 1  # skip trailing newline delimiter
-
-        if obj_type != "blob":
-            continue
 
         # Skip binary content (null bytes in first 8 KB).
         if b"\x00" in content[:8192]:

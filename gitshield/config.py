@@ -128,7 +128,12 @@ def load_ignore_list(path: Path) -> Set[str]:
                 line = line.strip()
                 if line and not line.startswith("#"):
                     ignores.add(line)
-    except OSError:
+    except OSError as exc:
+        import sys
+        print(
+            f"gitshield: warning: could not read {ignore_file}: {exc}",
+            file=sys.stderr,
+        )
         return set()
 
     return ignores

@@ -39,12 +39,35 @@ def _is_installed(settings: dict) -> bool:
     return False
 
 
+def _migrate_matcher(settings: dict) -> bool:
+    """Update existing gitshield hook matcher to include NotebookEdit if missing.
+
+    Returns True if the matcher was updated, False if no change was needed.
+    """
+    hooks = settings.get("hooks", {}).get("PreToolUse", [])
+    updated = False
+    for group in hooks:
+        for h in group.get("hooks", []):
+            if "gitshield" in h.get("command", ""):
+                matcher = group.get("matcher", "")
+                if "NotebookEdit" not in matcher:
+                    group["matcher"] = HOOK_MATCHER
+                    updated = True
+    return updated
+
+
 def install_hook() -> None:
     """Register GitShield as a Claude Code PreToolUse hook."""
     settings = _load_settings()
 
     if _is_installed(settings):
-        click.echo("GitShield hook already installed in Claude Code.")
+        # Migration: ensure existing installations include NotebookEdit in matcher.
+        updated = _migrate_matcher(settings)
+        if updated:
+            _save_settings(settings)
+            click.echo(colorize("GitShield hook updated: added NotebookEdit to matcher.", Colors.GREEN))
+        else:
+            click.echo("GitShield hook already installed in Claude Code.")
         return
 
     # Build the hook entry
